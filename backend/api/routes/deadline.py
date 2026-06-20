@@ -33,9 +33,7 @@ async def check_deadlines():
 
     sent_count = 0
     telegram_enabled = (
-        Config.TELEGRAM_ENABLED == "true"
-        and bool(Config.TELEGRAM_BOT_TOKEN)
-        and bool(Config.TELEGRAM_CHAT_ID)
+        Config.TELEGRAM_ENABLED == "true" and bool(Config.TELEGRAM_BOT_TOKEN) and bool(Config.TELEGRAM_CHAT_ID)
     )
     if telegram_enabled:
         from src.notifier.deadline_checker import check_and_notify_deadlines

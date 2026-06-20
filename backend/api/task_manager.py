@@ -169,7 +169,6 @@ class TaskManager:
         재시작 후에도 완료된 task 이력을 볼 수 있게 한다.
         이미 레지스트리에 있는 task는 덮어쓰지 않는다.
         """
-        import json
         from contextlib import suppress
 
         with suppress(Exception):
@@ -206,8 +205,7 @@ class TaskManager:
         cutoff = datetime.now(UTC) - timedelta(days=days)
         cutoff_iso = cutoff.isoformat()
         removed = [
-            tid for tid, t in self._tasks.items()
-            if t.status in _TERMINAL_STATUSES and t.created_at < cutoff_iso
+            tid for tid, t in self._tasks.items() if t.status in _TERMINAL_STATUSES and t.created_at < cutoff_iso
         ]
         for tid in removed:
             del self._tasks[tid]

@@ -111,9 +111,19 @@ def set(key: str, value: str) -> None:
         )
 
 
-def persist_task(task_id: str, kind: str, status: str, stage: str, message: str,
-                  progress_pct: float | None, result_json: str, error: str | None,
-                  metadata_json: str, created_at: str, updated_at: str) -> None:
+def persist_task(
+    task_id: str,
+    kind: str,
+    status: str,
+    stage: str,
+    message: str,
+    progress_pct: float | None,
+    result_json: str,
+    error: str | None,
+    metadata_json: str,
+    created_at: str,
+    updated_at: str,
+) -> None:
     """완료/실패된 task를 DB에 저장한다."""
     with _connect() as conn:
         conn.execute(
@@ -131,8 +141,19 @@ def persist_task(task_id: str, kind: str, status: str, stage: str, message: str,
                 error         = excluded.error,
                 updated_at    = excluded.updated_at
             """,
-            (task_id, kind, status, stage, message, progress_pct, result_json,
-             error, metadata_json, created_at, updated_at),
+            (
+                task_id,
+                kind,
+                status,
+                stage,
+                message,
+                progress_pct,
+                result_json,
+                error,
+                metadata_json,
+                created_at,
+                updated_at,
+            ),
         )
 
 
@@ -141,9 +162,7 @@ def load_tasks(limit: int = 200) -> list[dict]:
     import json
 
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     result = []
     for row in rows:
         d = dict(row)

@@ -1,5 +1,31 @@
 # Changelog
 
+## [v26.06.1] - 2026-06-20
+
+### study-helper 미이식 기능 이식 (1-A~1-D) · 로컬 개발 환경 지원
+
+#### 추가
+
+- **재생 완료 텔레그램 알림** (`backend/api/routes/player.py`)
+  - `_notify_playback_complete()` 헬퍼 추가 — 재생이 정상 종료(`final_state.ended`)됐을 때 텔레그램으로 완료 알림 전송
+- **재생 미완료 텔레그램 알림** (`backend/api/routes/player.py`)
+  - `_notify_playback_error()`에 `failed: bool = True` 파라미터 추가 — 재생 오류는 `failed=True`, 미완료 종료는 `failed=False`로 구분하여 알림 전송
+- **자동 모드 5강의마다 브라우저 재시작** (`backend/api/routes/auto.py`)
+  - `_run_auto_cycle()` 루프에 `idx % 5 == 0` 조건 추가 — 5강의 재생마다 `scraper.close()` + `scraper.start()` 호출로 Chromium 메모리 누적 방지 (study-helper 동일 패턴)
+- **수동 다운로드 요약 완료 텔레그램 전송** (`backend/api/routes/tasks.py`)
+  - `_notify_summary_complete()` 헬퍼 추가 — `start_download()` task 완료 후 요약 파일이 존재하면 텔레그램으로 요약 내용 전송
+- **로컬 개발 서버 지원** (`backend/main.py`)
+  - `frontend/` 디렉토리가 존재할 때 `StaticFiles`로 마운트 — Docker 없이 `uvicorn backend.main:app --port 8000 --reload` 만으로 프론트+백엔드 동시 구동 가능
+
+#### 테스트
+
+- `tests/test_web_player.py` — 재생 완료·오류·미완료 텔레그램 알림 3건 추가 (RED→GREEN)
+- `tests/test_web_auto.py` — 자동 모드 5강의 주기 브라우저 재시작 검증 신규 파일
+- `tests/test_web_download.py` — 수동 다운로드 요약 완료 텔레그램 전송 검증 추가
+- 전체 81/81 통과
+
+---
+
 ## [v26.05.1] - 2026-05-20
 
 ### study-helper 원본 대비 미마이그레이션·미완성 기능 완성
