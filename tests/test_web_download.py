@@ -244,3 +244,58 @@ async def test_start_download_requires_enabled_setting():
 
     assert exc.value.status_code == 409
     assert "영상 다운로드" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_start_download_sends_telegram_when_summary_complete(monkeypatch, tmp_path):
+    """1-D: 수동 다운로드 task 완료 후 요약 파일 텔레그램 전송."""
+    course = _seed_course()
+    Config.AI_ENABLED = "true"
+    Config.GOOGLE_API_KEY = "key"
+    Config.GEMINI_MODEL = "gemini-2.5-flash"
+    Config.TELEGRAM_ENABLED = "true"
+    Config.TELEGRAM_BOT_TOKEN = "token"
+    Config.TELEGRAM_CHAT_ID = "chat"
+
+    summary_file = tmp_path / "lecture_summarized.txt"
+    summary_file.write_text("요약 내용", encoding="utf-8")
+
+    async def fake_download_lecture_media(**kwargs):
+        return {
+            "files": [],
+            "stt": {"enabled": True, "status": "completed", "txt_path": str(tmp_path / "lecture.txt")},
+            "summary": {
+                "enabled": True,
+                "status": "completed",
+                "summary_path": str(summary_file),
+                "txt_path": str(tmp_path / "lecture.txt"),
+            },
+        }
+
+    notified = {}
+
+    def fake_notify_summary(
+        bot_token, chat_id, course_name, week_label, lecture_title, summary_text, summary_path, auto_delete_files=None
+    ):
+        notified["sent"] = True
+        notified["course_name"] = course_name
+        notified["summary_text"] = summary_text
+        return True
+
+    monkeypatch.setattr("src.downloader.pipeline.download_lecture_media", fake_download_lecture_media)
+    monkeypatch.setattr("src.notifier.telegram_notifier.notify_summary_complete", fake_notify_summary)
+
+    response = await tasks_route.start_download(
+        tasks_route.DownloadTaskRequest(
+            course_id=course.id,
+            lecture_url="https://canvas.ssu.ac.kr/courses/42/items/1",
+            lecture_title="1강",
+            week_label="1주차",
+        )
+    )
+    managed = task_manager.get(response["task_id"])
+    await managed.task
+
+    assert notified.get("sent") is True
+    assert notified["course_name"] == "테스트 과목"
+    assert notified["summary_text"] == "요약 내용"

@@ -17,7 +17,7 @@ from playwright.async_api import Page
 
 logger = logging.getLogger(__name__)
 
-from src.player.background_player import _click_play, _dismiss_dialog, _find_player_frame
+from src.player.background_player import _click_play, _dismiss_dialog, _find_player_frame  # noqa: E402
 
 _MAX_RETRIES = 3
 _TIMEOUT = (10, 60)  # (connect, read) seconds

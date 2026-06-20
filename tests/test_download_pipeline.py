@@ -23,7 +23,7 @@ async def test_download_pipeline_transcribes_mp3_and_deletes_audio(monkeypatch, 
         mp3_path.write_bytes(b"mp3")
         return mp3_path
 
-    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = ""):
+    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None):
         txt_path = audio_path.with_suffix(".txt")
         txt_path.write_text(f"{model_size}:{language}", encoding="utf-8")
         return txt_path
@@ -70,7 +70,7 @@ async def test_download_pipeline_summarizes_txt_and_deletes_source(monkeypatch, 
         mp3_path.write_bytes(b"mp3")
         return mp3_path
 
-    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = ""):
+    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None):
         txt_path = audio_path.with_suffix(".txt")
         txt_path.write_text("강의 원문", encoding="utf-8")
         return txt_path

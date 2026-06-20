@@ -99,6 +99,113 @@ async def test_start_play_marks_completed_lecture(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_play_complete_sends_telegram_notification(monkeypatch):
+    """1-A: 재생 완료 시 텔레그램 완료 알림 전송."""
+    course, lecture = _seed_course()
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+        state = PlaybackState(current=10, duration=10, ended=True)
+        if on_progress:
+            on_progress(state)
+        return state
+
+    notified = {}
+
+    def fake_notify_complete(bot_token, chat_id, course_name, week_label, lecture_title):
+        notified["sent"] = True
+        notified["course_name"] = course_name
+        notified["lecture_title"] = lecture_title
+        return True
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+    monkeypatch.setattr("src.notifier.telegram_notifier.notify_playback_complete", fake_notify_complete)
+    monkeypatch.setattr("src.config.Config.TELEGRAM_ENABLED", "true")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_CHAT_ID", "chat")
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    await app_state.play_task
+
+    assert notified.get("sent") is True
+    assert notified["course_name"] == "테스트 과목"
+    assert notified["lecture_title"] == "1강"
+
+
+@pytest.mark.asyncio
+async def test_play_error_sends_failed_true_notification(monkeypatch):
+    """1-B: 재생 오류 시 failed=True 알림 전송."""
+    course, lecture = _seed_course()
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+        return PlaybackState(current=2, duration=10, ended=False, error="비디오 오류")
+
+    notified = {}
+
+    def fake_notify_error(bot_token, chat_id, course_name, week_label, lecture_title, failed=True):
+        notified["failed"] = failed
+        return True
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+    monkeypatch.setattr("src.notifier.telegram_notifier.notify_playback_error", fake_notify_error)
+    monkeypatch.setattr(player_route, "_write_playback_log", lambda *a: None)
+    monkeypatch.setattr("src.config.Config.TELEGRAM_ENABLED", "true")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_CHAT_ID", "chat")
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    await app_state.play_task
+
+    assert notified.get("failed") is True
+
+
+@pytest.mark.asyncio
+async def test_play_incomplete_sends_failed_false_notification(monkeypatch):
+    """1-B: 재생 미완료(오류 없음) 시 failed=False 알림 전송."""
+    course, lecture = _seed_course()
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+        return PlaybackState(current=5, duration=10, ended=False, error=None)
+
+    notified = {}
+
+    def fake_notify_error(bot_token, chat_id, course_name, week_label, lecture_title, failed=True):
+        notified["failed"] = failed
+        return True
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+    monkeypatch.setattr("src.notifier.telegram_notifier.notify_playback_error", fake_notify_error)
+    monkeypatch.setattr("src.config.Config.TELEGRAM_ENABLED", "true")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr("src.config.Config.TELEGRAM_CHAT_ID", "chat")
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    await app_state.play_task
+
+    assert notified.get("failed") is False
+
+
+@pytest.mark.asyncio
 async def test_start_play_preserves_playback_error(monkeypatch):
     course, lecture = _seed_course()
 

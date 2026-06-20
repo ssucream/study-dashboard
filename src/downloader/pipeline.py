@@ -31,7 +31,7 @@ def download_info_for_lecture(
 ) -> dict[str, Any]:
     """강의 다운로드 파일 존재 여부를 검사한다."""
     try:
-        base_dir, mp4_path = build_download_paths(
+        _base_dir, mp4_path = build_download_paths(
             download_dir=download_dir,
             course_name=course_name,
             week_label=week_label,
@@ -166,15 +166,17 @@ async def download_lecture_media(
     stt_result: dict[str, Any] = {"enabled": False}
     summary_result: dict[str, Any] = {"enabled": False}
     if stt_enabled and normalized_rule in {"mp3", "both"} and mp3_path:
-        stage("stt_loading", f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.", 95)
+        stage(
+            "stt_loading",
+            f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.",
+            95,
+        )
         from src.stt.transcriber import transcribe
 
         loop = asyncio.get_running_loop()
 
         def _on_model_loaded() -> None:
-            loop.call_soon_threadsafe(
-                lambda: on_stage("transcribing", "STT 변환 중입니다.", 96) if on_stage else None
-            )
+            loop.call_soon_threadsafe(lambda: on_stage("transcribing", "STT 변환 중입니다.", 96) if on_stage else None)
 
         txt_path = await loop.run_in_executor(
             None,

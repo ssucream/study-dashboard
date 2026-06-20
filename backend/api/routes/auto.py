@@ -66,8 +66,11 @@ async def _run_post_play_pipeline(course, lec) -> None:
             await loop.run_in_executor(
                 None,
                 telegram_notifier.notify_playback_complete,
-                bot_token, chat_id,
-                course.long_name, lec.week_label, lec.title,
+                bot_token,
+                chat_id,
+                course.long_name,
+                lec.week_label,
+                lec.title,
             )
 
     if Config.DOWNLOAD_ENABLED != "true" or Config.AUTO_DOWNLOAD_AFTER_PLAY != "true":
@@ -120,9 +123,13 @@ async def _run_post_play_pipeline(course, lec) -> None:
                         await loop.run_in_executor(
                             None,
                             telegram_notifier.notify_summary_complete,
-                            bot_token, chat_id,
-                            course.long_name, lec.week_label, lec.title,
-                            summary_text, summary_path,
+                            bot_token,
+                            chat_id,
+                            course.long_name,
+                            lec.week_label,
+                            lec.title,
+                            summary_text,
+                            summary_path,
                             auto_delete or None,
                         )
 
@@ -132,8 +139,11 @@ async def _run_post_play_pipeline(course, lec) -> None:
                 await loop.run_in_executor(
                     None,
                     telegram_notifier.notify_download_unsupported,
-                    bot_token, chat_id,
-                    course.long_name, lec.week_label, lec.title,
+                    bot_token,
+                    chat_id,
+                    course.long_name,
+                    lec.week_label,
+                    lec.title,
                 )
     except asyncio.CancelledError:
         raise
@@ -144,8 +154,12 @@ async def _run_post_play_pipeline(course, lec) -> None:
                 await loop.run_in_executor(
                     None,
                     telegram_notifier.notify_auto_error,
-                    bot_token, chat_id,
-                    course.long_name, lec.week_label, lec.title, str(e),
+                    bot_token,
+                    chat_id,
+                    course.long_name,
+                    lec.week_label,
+                    lec.title,
+                    str(e),
                 )
     finally:
         app_state.auto.pipeline_stage = ""
@@ -179,11 +193,7 @@ async def _run_auto_cycle() -> None:
     # 마감 임박 알림 (텔레그램 설정 시)
     from src.config import Config
 
-    if (
-        Config.TELEGRAM_ENABLED == "true"
-        and Config.TELEGRAM_BOT_TOKEN
-        and Config.TELEGRAM_CHAT_ID
-    ):
+    if Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID:
         from src.notifier.deadline_checker import check_and_notify_deadlines
 
         loop = asyncio.get_running_loop()
@@ -213,9 +223,19 @@ async def _run_auto_cycle() -> None:
         app_state.auto.next_run_at = next_time.strftime("%H:%M")
         return
 
-    for course, lec in pending:
+    for idx, (course, lec) in enumerate(pending):
         if not app_state.auto.enabled:
             break
+
+        # 5강의마다 중간 브라우저 재시작 (Chromium 힙 누적 억제)
+        if idx > 0 and idx % 5 == 0 and app_state.scraper:
+            try:
+                await app_state.scraper.close()
+                await app_state.scraper.start()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                app_state.auto.error = f"중간 브라우저 재시작 실패: {e}"
 
         # 수동 재생 중이면 완료 대기
         while app_state.is_playing and app_state.auto.enabled:
@@ -379,6 +399,7 @@ async def auto_start(req: AutoStartRequest):
 
     # 미설정 기능 소프트 경고 (시작을 막지는 않음)
     from src.config import Config
+
     warnings: list[str] = []
     if Config.DOWNLOAD_ENABLED != "true" or Config.AUTO_DOWNLOAD_AFTER_PLAY != "true":
         warnings.append("재생 완료 후 자동 다운로드가 비활성화되어 있어 STT·AI 요약이 실행되지 않습니다.")

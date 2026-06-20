@@ -11,6 +11,54 @@ from src.config import Config
 router = APIRouter()
 
 
+async def _notify_summary_complete(
+    course_name: str,
+    week_label: str,
+    lecture_title: str,
+    summary_result: dict,
+    download_files: list,
+) -> None:
+    """요약 완료 시 텔레그램으로 요약 문서 전송. 설정 미완성이면 무시."""
+    import asyncio
+    from contextlib import suppress
+    from pathlib import Path
+
+    from src.notifier import telegram_notifier
+
+    if not (Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID):
+        return
+
+    summary_path_str = summary_result.get("summary_path", "")
+    if not summary_path_str:
+        return
+    summary_path = Path(summary_path_str)
+    if not summary_path.is_file():
+        return
+
+    summary_text = summary_path.read_text(encoding="utf-8")
+    auto_delete: list[Path] = []
+    if Config.TELEGRAM_AUTO_DELETE == "true":
+        for f in download_files:
+            if f.get("deleted") != "true":
+                p = Path(f["path"])
+                if p.exists():
+                    auto_delete.append(p)
+
+    with suppress(Exception):
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            telegram_notifier.notify_summary_complete,
+            Config.TELEGRAM_BOT_TOKEN,
+            Config.TELEGRAM_CHAT_ID,
+            course_name,
+            week_label,
+            lecture_title,
+            summary_text,
+            summary_path,
+            auto_delete or None,
+        )
+
+
 def _require_auth() -> None:
     if not app_state.scraper:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
@@ -100,6 +148,13 @@ async def start_download(req: DownloadTaskRequest):
                     week_label=req.week_label,
                     message="AI 요약이 완료되었습니다.",
                     metadata={"task_id": managed.id, "summary": summary_result},
+                )
+                await _notify_summary_complete(
+                    course_name=course.long_name,
+                    week_label=req.week_label,
+                    lecture_title=req.lecture_title,
+                    summary_result=summary_result,
+                    download_files=result.get("files", []),
                 )
             event_log.record_event(
                 event_type="download",
@@ -294,9 +349,9 @@ async def start_summarize(task_id: str):
     week_label = task.metadata.get("week_label", "")
 
     async def run(managed: ManagedTask):
-        from functools import partial
 
         from backend.api.summary_store import encode_summary_id
+
         from src.summarizer.summarizer import summarize
 
         managed.update(stage="summarizing", message="AI 요약 중입니다.")
@@ -383,7 +438,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
             lecture_title=req.lecture_title,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     mp3_path = mp4_path.with_suffix(".mp3")
     txt_path = mp4_path.with_suffix(".txt")
@@ -402,9 +457,9 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
     week_label = req.week_label
 
     async def run(managed: ManagedTask):
-        from functools import partial
 
         from backend.api.summary_store import encode_summary_id
+
         from src.summarizer.summarizer import summarize
 
         current_txt = txt_path
