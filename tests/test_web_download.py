@@ -299,3 +299,40 @@ async def test_start_download_sends_telegram_when_summary_complete(monkeypatch, 
     assert notified.get("sent") is True
     assert notified["course_name"] == "테스트 과목"
     assert notified["summary_text"] == "요약 내용"
+
+
+@pytest.mark.asyncio
+async def test_summarize_from_file_unpacks_new_path_layout(monkeypatch, tmp_path):
+    """회귀 테스트: build_download_paths()가 5-tuple을 반환하도록 바뀐 뒤에도
+    summarize-from-file이 정상 동작해야 한다 (이전엔 2-tuple 언패킹으로 항상 ValueError)."""
+    from src.downloader.pipeline import build_download_paths
+
+    course = _seed_course()
+    Config.AI_ENABLED = "true"
+    Config.GOOGLE_API_KEY = "api-key"
+    Config.GEMINI_MODEL = "gemini-2.5-flash"
+    monkeypatch.setattr(Config, "get_download_dir", staticmethod(lambda: str(tmp_path)))
+
+    _base, _mp4, _mp3, txt_path, summary_path = build_download_paths(
+        download_dir=str(tmp_path),
+        course_name=course.long_name,
+        week_label="1주차",
+        lecture_title="1강",
+    )
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    txt_path.write_text("강의 텍스트", encoding="utf-8")
+
+    monkeypatch.setattr("src.summarizer.summarizer.summarize", lambda *a, **kw: summary_path)
+
+    response = await tasks_route.start_summarize_from_file(
+        tasks_route.SummarizeFromFileRequest(
+            course_id=course.id,
+            lecture_title="1강",
+            week_label="1주차",
+        )
+    )
+    managed = task_manager.get(response["task_id"])
+    await managed.task
+
+    assert managed.status == "completed"
+    assert managed.result["summary_path"] == str(summary_path)

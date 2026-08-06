@@ -20,7 +20,7 @@ def _load_credential(key: str) -> str:
 
 def _default_download_dir() -> str:
     """다운로드 경로는 UI/DB 설정과 무관하게 컨테이너 내부 /download로 고정한다."""
-    return "/download"
+    return "/downloads"
 
 
 def _read_version() -> str:

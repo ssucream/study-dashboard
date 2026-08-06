@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _db_path() -> Path:
-    base = Path("/data") if Path("/data").exists() else Path("data")
+    base = Path("/db") if Path("/db").exists() else Path("db")
     return base / "app.db"
 
 

@@ -21,6 +21,38 @@ class DownloadUnsupportedError(RuntimeError):
     """LMS 강의 유형상 다운로드를 지원하지 않을 때 발생한다."""
 
 
+def build_download_paths(
+    *,
+    download_dir: str,
+    course_name: str,
+    week_label: str,
+    lecture_title: str,
+) -> tuple[Path, Path, Path, Path, Path]:
+    """base_dir, mp4, mp3, txt, summary 경로를 반환한다.
+
+    downloads/
+      video/{course}/{week}/{title}.mp4
+      audio/{course}/{week}/{title}.mp3
+      text/{course}/{week}/{title}.txt
+      summarized/{course}/{week}/{title}_summarized.txt
+    """
+    base_dir = Path(download_dir).expanduser().resolve()
+    rel = make_filepath(course_name, week_label, lecture_title)  # {course}/{week}/{title}.mp4
+    stem = rel.stem
+    sub = rel.parent  # {course}/{week}
+
+    mp4_path = (base_dir / "video" / sub / f"{stem}.mp4").resolve()
+    mp3_path = (base_dir / "audio" / sub / f"{stem}.mp3").resolve()
+    txt_path = (base_dir / "text" / sub / f"{stem}.txt").resolve()
+    summary_path = (base_dir / "summarized" / sub / f"{stem}_summarized.txt").resolve()
+
+    for p in (mp4_path, mp3_path, txt_path, summary_path):
+        if not p.is_relative_to(base_dir):
+            raise ValueError("잘못된 다운로드 경로가 감지되었습니다.")
+
+    return base_dir, mp4_path, mp3_path, txt_path, summary_path
+
+
 def download_info_for_lecture(
     *,
     download_dir: str,
@@ -31,7 +63,7 @@ def download_info_for_lecture(
 ) -> dict[str, Any]:
     """강의 다운로드 파일 존재 여부를 검사한다."""
     try:
-        _base_dir, mp4_path = build_download_paths(
+        _base_dir, mp4_path, mp3_path, txt_path, _summary_path = build_download_paths(
             download_dir=download_dir,
             course_name=course_name,
             week_label=week_label,
@@ -39,9 +71,6 @@ def download_info_for_lecture(
         )
     except (ValueError, Exception):
         return {"exists": False}
-
-    mp3_path = mp4_path.with_suffix(".mp3")
-    txt_path = mp4_path.with_suffix(".txt")
 
     has_mp4 = mp4_path.is_file()
     has_mp3 = mp3_path.is_file()
@@ -64,21 +93,6 @@ def download_info_for_lecture(
         "mp3_path": str(mp3_path) if has_mp3 else None,
         "txt_path": str(txt_path) if has_txt else None,
     }
-
-
-def build_download_paths(
-    *,
-    download_dir: str,
-    course_name: str,
-    week_label: str,
-    lecture_title: str,
-) -> tuple[Path, Path]:
-    """다운로드 base dir과 mp4 저장 경로를 안전하게 계산한다."""
-    base_dir = Path(download_dir).expanduser().resolve()
-    mp4_path = (base_dir / make_filepath(course_name, week_label, lecture_title)).resolve()
-    if not mp4_path.is_relative_to(base_dir):
-        raise ValueError("잘못된 다운로드 경로가 감지되었습니다.")
-    return base_dir, mp4_path
 
 
 async def download_lecture_media(
@@ -106,7 +120,7 @@ async def download_lecture_media(
 ) -> dict[str, Any]:
     """강의 영상을 설정 규칙에 따라 mp4/mp3/both로 저장한다."""
     normalized_rule = normalize_download_rule(rule)
-    base_dir, mp4_path = build_download_paths(
+    base_dir, mp4_path, mp3_path, txt_path, summary_path = build_download_paths(
         download_dir=download_dir,
         course_name=course_name,
         week_label=week_label,
@@ -150,14 +164,13 @@ async def download_lecture_media(
 
     files: list[dict[str, str]] = []
     mp3_file: dict[str, str] | None = None
-    mp3_path: Path | None = None
     if normalized_rule in {"mp4", "both"}:
         files.append({"type": "mp4", "path": str(mp4_path)})
 
     if normalized_rule in {"mp3", "both"}:
         stage("converting", "mp3 파일로 변환하는 중입니다.", 90)
         loop = asyncio.get_running_loop()
-        mp3_path = await loop.run_in_executor(None, convert_to_mp3, mp4_path)
+        await loop.run_in_executor(None, convert_to_mp3, mp4_path, mp3_path)
         mp3_file = {"type": "mp3", "path": str(mp3_path)}
         files.append(mp3_file)
         if normalized_rule == "mp3":
@@ -165,7 +178,7 @@ async def download_lecture_media(
 
     stt_result: dict[str, Any] = {"enabled": False}
     summary_result: dict[str, Any] = {"enabled": False}
-    if stt_enabled and normalized_rule in {"mp3", "both"} and mp3_path:
+    if stt_enabled and normalized_rule in {"mp3", "both"}:
         stage(
             "stt_loading",
             f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.",
@@ -178,7 +191,7 @@ async def download_lecture_media(
         def _on_model_loaded() -> None:
             loop.call_soon_threadsafe(lambda: on_stage("transcribing", "STT 변환 중입니다.", 96) if on_stage else None)
 
-        txt_path = await loop.run_in_executor(
+        await loop.run_in_executor(
             None,
             partial(
                 transcribe,
@@ -186,6 +199,7 @@ async def download_lecture_media(
                 model_size=stt_model or "base",
                 language=stt_language or "",
                 on_model_loaded=_on_model_loaded,
+                output_path=txt_path,
             ),
         )
         files.append({"type": "txt", "path": str(txt_path)})
@@ -209,7 +223,7 @@ async def download_lecture_media(
             from src.summarizer.summarizer import summarize
 
             loop = asyncio.get_running_loop()
-            summary_path = await loop.run_in_executor(
+            await loop.run_in_executor(
                 None,
                 partial(
                     summarize,
@@ -220,6 +234,7 @@ async def download_lecture_media(
                     prompt_template=summary_prompt_template or "",
                     extra_prompt=summary_prompt_extra or "",
                     course_name=course_name,
+                    output_path=summary_path,
                 ),
             )
             files.append({"type": "summary", "path": str(summary_path)})

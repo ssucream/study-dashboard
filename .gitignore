@@ -6,6 +6,10 @@
 # Downloads & generated data
 data/*
 !data/.gitkeep
+db/*
+!db/.gitkeep
+downloads/*
+!downloads/.gitkeep
 
 # Logs
 logs/*

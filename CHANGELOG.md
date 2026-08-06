@@ -1,5 +1,44 @@
 # Changelog
 
+버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
+
+## [v26.7.0] - 2026-08-06
+
+### 버전 형식 변경 · 다운로드 파이프라인 재편 · 실시간 상태 스트리밍
+
+#### 변경
+
+- **버전 형식 전환**: `연도.월.버전` → `연도.메이저.마이너`
+- **다운로드 디렉터리 구조 재편** (`src/downloader/pipeline.py`)
+  - `build_download_paths()`가 `(base_dir, mp4)` 2-tuple 대신 `(base_dir, mp4, mp3, txt, summary)` 5-tuple을 반환하도록 변경
+  - `video/`, `audio/`, `text/`, `summarized/` 타입별 하위 디렉터리로 저장 위치를 고정 — 기존엔 `mp4.with_suffix()`로 mp3/txt 경로를 추정해 mp3 단독 다운로드 시 경로가 어긋나는 문제가 있었음
+  - `transcribe()`, `summarize()`에 `output_path` 파라미터를 추가해 위 구조에 맞춰 결과물을 저장하도록 함
+- **다운로드/DB 저장 경로 변경** (`docker-compose.yml`): `./data` → `./db`, `./download` → `./downloads`
+
+#### 추가
+
+- **실시간 상태 스트리밍**: `GET /ws/status` WebSocket 신설 — 재생·자동모드 상태를 2초 주기로 push, 프론트가 폴링 대신 WebSocket으로 전환 (`backend/api/routes/ws.py`, `frontend/js/app.js`)
+- **재생 완료 후 자동 다운로드**: `AUTO_DOWNLOAD_AFTER_PLAY` 설정 시 재생 완료를 트리거로 다운로드 task를 자동 생성 (`backend/api/routes/player.py`)
+- **미제출 과제/퀴즈 대시보드**: `GET /api/courses/pending-items` 신설, 통계 카드 클릭 시 모달로 목록 표시
+- **STT/요약 파일 다운로드**: `GET /api/tasks/{id}/stt/download`, `GET /api/summaries/{id}/download`
+- **강의 검색/필터**: 대시보드 강의 목록에 검색창 + 완료여부 필터 추가
+- **설정 미비 배너**: AI 요약 등 미설정 시 대시보드 상단 경고 배너 표시
+- 사이드바 메뉴명 변경: "요약 대시보드" → "학습 결과"
+
+#### 수정 (버그·인프라)
+
+- **CRITICAL**: `POST /api/tasks/summarize-from-file`이 디렉터리 재편 이후 5-tuple 언패킹 누락으로 항상 `ValueError` → HTTP 400으로 실패하던 문제 수정 (`backend/api/routes/tasks.py`)
+- `CLAUDE.md`: 실행 방법이 존재하지 않는 `study-helper` 서비스를 참조하던 것을 실제 `backend`+`frontend` compose 구성으로, 경로 문서(`data/`→`db/`, `/download`→`/downloads`)를 실제와 일치하도록 수정
+- CI: `ruff` lint 대상에 `backend/` 추가, `docker-build` job이 존재하지 않는 루트 `Dockerfile`을 빌드하려던 것을 `backend/Dockerfile`+`frontend/Dockerfile` 개별 빌드로 수정, CI/release 트리거를 `workflow_dispatch` → `push`/`pull_request`/태그 자동 트리거로 복구
+- `pyproject.toml`: 패키지명/엔트리포인트를 `study-helper` → `study-dashboard`로 변경(대시보드 정체성 반영), `uv.lock` 재생성
+- `.gitignore`: `db/`, `downloads/` 누락 항목 추가 — 암호화된 API 키·평문 학번이 담긴 DB 파일이 커밋될 수 있던 위험 제거
+
+#### 테스트
+
+- `tests/test_web_download.py` — `summarize-from-file` 5-tuple 언패킹 회귀 테스트 추가
+
+---
+
 ## [v26.06.1] - 2026-06-20
 
 ### study-helper 미이식 기능 이식 (1-A~1-D) · 로컬 개발 환경 지원

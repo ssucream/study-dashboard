@@ -78,8 +78,6 @@ def _find_course(course_id: str):
 @router.post("/download")
 async def start_download(req: DownloadTaskRequest):
     _require_auth()
-    if Config.DOWNLOAD_ENABLED != "true":
-        raise HTTPException(status_code=409, detail="설정에서 영상 다운로드를 먼저 활성화하세요.")
     if app_state.is_playing:
         raise HTTPException(status_code=409, detail="재생 중에는 다운로드를 시작할 수 없습니다.")
     if app_state.auto.enabled:
@@ -317,6 +315,27 @@ async def get_stt_text(task_id: str):
     }
 
 
+@router.get("/{task_id}/stt/download")
+async def download_stt_file(task_id: str):
+    """STT 텍스트 파일을 다운로드한다."""
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    _require_auth()
+    task = task_manager.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    stt = (task.result or {}).get("stt") or {}
+    txt_path_str = stt.get("txt_path")
+    if not txt_path_str:
+        raise HTTPException(status_code=404, detail="STT 파일이 없습니다.")
+    txt_path = Path(txt_path_str)
+    if not txt_path.is_file():
+        raise HTTPException(status_code=404, detail="STT 파일을 찾을 수 없습니다.")
+    return FileResponse(path=txt_path, filename=txt_path.name, media_type="text/plain; charset=utf-8")
+
+
 @router.post("/{task_id}/summarize")
 async def start_summarize(task_id: str):
     _require_auth()
@@ -431,7 +450,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
     from src.downloader.pipeline import build_download_paths
 
     try:
-        _, mp4_path = build_download_paths(
+        _base, mp4_path, mp3_path, txt_path, _summary = build_download_paths(
             download_dir=Config.get_download_dir(),
             course_name=course.long_name,
             week_label=req.week_label,
@@ -439,9 +458,6 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-
-    mp3_path = mp4_path.with_suffix(".mp3")
-    txt_path = mp4_path.with_suffix(".txt")
 
     audio_path: Path | None = None
     if mp3_path.is_file():

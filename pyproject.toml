@@ -1,7 +1,7 @@
 [project]
-name = "study-helper"
+name = "study-dashboard"
 version = "0.1.0"
-description = "숭실대학교 LMS 강의 백그라운드 재생 및 다운로드/요약 도구"
+description = "숭실대학교 LMS 강의 백그라운드 재생 및 다운로드/요약 웹 대시보드"
 requires-python = ">=3.11,<3.13"
 
 dependencies = [
@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-study-helper = "src.main:main"
+study-dashboard = "src.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

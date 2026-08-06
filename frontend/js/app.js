@@ -6,6 +6,9 @@ import { openSttText, openSummary } from './modals.js';
 import { loadSummaries } from './summaries.js';
 import { loadLogs, updateLogMenuState } from './logs.js';
 
+const _filter = { query: '', completion: 'all' };
+let _ws = null;
+
 // ═══════════════════════════════════════════════════════════════
 // 페이지 라우팅
 // ═══════════════════════════════════════════════════════════════
@@ -51,8 +54,8 @@ function showLogin() {
   $('#input-user-id').value = '';
   $('#input-password').value = '';
   $('#login-error').classList.add('hidden');
-  stopPolling();
-  stopAutoPolling();
+  state.deadlineChecked = false;
+  stopStatusWs();
   stopAllDownloadTaskPolling();
 }
 
@@ -73,10 +76,17 @@ function showApp(userId) {
   $('#page-login').classList.add('hidden');
   $('#app-shell').classList.remove('hidden');
   $('#sidebar-user-id').textContent = userId;
-  loadAppSettings().catch(() => {});
+  loadAppSettings()
+    .then(s => {
+      _checkSettingsBanner(s);
+      if (!state.deadlineChecked) {
+        state.deadlineChecked = true;
+        api('POST', '/api/deadline/check').catch(() => {});
+      }
+    })
+    .catch(() => {});
   navigate('dashboard');
-  startPolling();
-  startAutoPolling();
+  startStatusWs();
   checkVersion().catch(() => {});
 }
 
@@ -129,85 +139,104 @@ function stopPolling() {
   if (state.pollingTimer) { clearInterval(state.pollingTimer); state.pollingTimer = null; }
 }
 
-async function updatePlayerUI() {
-  try {
-    const s = await api('GET', '/api/player/status');
-    const active = $('#player-active');
-    const idle = $('#player-idle');
-    const message = $('#player-message');
-    const messageTitle = $('#player-message-title');
-    const messageBody = $('#player-message-body');
-    const messageLog = $('#player-message-log');
-    const status = s.status || (s.is_playing ? 'playing' : 'idle');
-    const previousStatus = state.lastPlayerStatus;
-    state.lastPlayerStatus = status;
+function startStatusWs() {
+  stopStatusWs();
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _ws = new WebSocket(`${proto}//${location.host}/ws/status`);
+  _ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.player) _applyPlayerStatus(data.player);
+      if (data.auto) _applyAutoStatus(data.auto);
+    } catch {}
+  };
+  _ws.onclose = () => {
+    _ws = null;
+    if (state.userId) setTimeout(() => { startPolling(); startAutoPolling(); }, 3000);
+  };
+  _ws.onerror = () => {};
+}
 
-    if (s.is_playing) {
-      active.classList.remove('hidden');
-      idle.classList.add('hidden');
+function stopStatusWs() {
+  if (_ws) { try { _ws.close(); } catch {} _ws = null; }
+  stopPolling();
+  stopAutoPolling();
+}
+
+function _applyPlayerStatus(s) {
+  const active = $('#player-active');
+  const idle = $('#player-idle');
+  const message = $('#player-message');
+  const messageTitle = $('#player-message-title');
+  const messageBody = $('#player-message-body');
+  const messageLog = $('#player-message-log');
+  const status = s.status || (s.is_playing ? 'playing' : 'idle');
+  const previousStatus = state.lastPlayerStatus;
+  state.lastPlayerStatus = status;
+
+  if (s.is_playing) {
+    active.classList.remove('hidden');
+    idle.classList.add('hidden');
+    message.classList.add('hidden');
+    $('#player-course-name').textContent = s.course_name || '';
+    $('#player-lecture-title').textContent = s.lecture_title || '';
+    $('#player-week').textContent = s.week_label || '';
+    $('#player-pct').childNodes[0].textContent = Math.round(s.progress_pct);
+    $('#player-time').textContent = `${fmtTime(s.current)} / ${fmtTime(s.duration)}`;
+    $('#player-bar').style.width = `${s.progress_pct}%`;
+  } else {
+    active.classList.add('hidden');
+    idle.classList.remove('hidden');
+    $('#player-bar').style.width = '0%';
+
+    message.classList.add('hidden');
+    messageTitle.textContent = '';
+    messageBody.textContent = '';
+    messageLog.classList.add('hidden');
+    messageLog.textContent = '';
+
+    if (s.error) {
+      message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-red-500/10 border-red-500/30 text-red-300';
+      messageTitle.textContent = '재생 실패';
+      messageBody.textContent = s.error;
+      if (s.log_path) {
+        messageLog.textContent = `로그 저장: ${s.log_path}`;
+        messageLog.classList.remove('hidden');
+      }
+    } else if (status === 'completed' && s.lecture_title) {
+      message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
+      messageTitle.textContent = '재생 완료';
+      messageBody.textContent = `${s.lecture_title} 강의 재생이 완료되었습니다.`;
+      if (s.refresh_recommended) {
+        messageLog.textContent = '강의 목록이 자동으로 업데이트되지 않았습니다. 강의 목록 탭의 새로고침 버튼을 눌러주세요.';
+        messageLog.classList.remove('hidden');
+      }
+    } else if (status === 'stopped' && s.lecture_title) {
+      message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-amber-500/10 border-amber-500/30 text-amber-300';
+      messageTitle.textContent = '재생 중지됨';
+      messageBody.textContent = `${s.lecture_title} 강의 재생이 중지되었습니다.`;
+    }
+
+    if (!messageTitle.textContent && !messageBody.textContent) {
       message.classList.add('hidden');
-      $('#player-course-name').textContent = s.course_name || '';
-      $('#player-lecture-title').textContent = s.lecture_title || '';
-      $('#player-week').textContent = s.week_label || '';
-      $('#player-pct').childNodes[0].textContent = Math.round(s.progress_pct);
-      $('#player-time').textContent = `${fmtTime(s.current)} / ${fmtTime(s.duration)}`;
-      $('#player-bar').style.width = `${s.progress_pct}%`;
     } else {
-      active.classList.add('hidden');
-      idle.classList.remove('hidden');
-      $('#player-bar').style.width = '0%';
-
-      message.classList.add('hidden');
-      messageTitle.textContent = '';
-      messageBody.textContent = '';
-      messageLog.classList.add('hidden');
-      messageLog.textContent = '';
-
-      if (s.error) {
-        message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-red-500/10 border-red-500/30 text-red-300';
-        messageTitle.textContent = '재생 실패';
-        messageBody.textContent = s.error;
-        if (s.log_path) {
-          messageLog.textContent = `로그 저장: ${s.log_path}`;
-          messageLog.classList.remove('hidden');
-        }
-      } else if (status === 'completed' && s.lecture_title) {
-        message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
-        messageTitle.textContent = '재생 완료';
-        messageBody.textContent = `${s.lecture_title} 강의 재생이 완료되었습니다.`;
-        if (s.refresh_recommended) {
-          messageLog.textContent = '강의 목록이 자동으로 업데이트되지 않았습니다. 강의 목록 탭의 새로고침 버튼을 눌러주세요.';
-          messageLog.classList.remove('hidden');
-        }
-      } else if (status === 'stopped' && s.lecture_title) {
-        message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-amber-500/10 border-amber-500/30 text-amber-300';
-        messageTitle.textContent = '재생 중지됨';
-        messageBody.textContent = `${s.lecture_title} 강의 재생이 중지되었습니다.`;
-      }
-
-      if (!messageTitle.textContent && !messageBody.textContent) {
-        message.classList.add('hidden');
-      } else {
-        message.classList.remove('hidden');
-      }
+      message.classList.remove('hidden');
     }
+  }
 
-    if (previousStatus === 'playing' && status === 'completed') {
-      loadStats();
-      state.courses = [];
-      if (state.currentPage === 'courses') loadCourses();
-      if (
-        state.settings.DOWNLOAD_ENABLED === 'true' &&
-        state.settings.AUTO_DOWNLOAD_AFTER_PLAY === 'true' &&
-        s.course_id &&
-        s.lecture_url &&
-        state.autoDownloadStartedFor !== s.lecture_url
-      ) {
-        state.autoDownloadStartedFor = s.lecture_url;
-        startAutoDownloadAfterPlayback(s, messageLog);
-      }
+  if (previousStatus === 'playing' && status === 'completed') {
+    loadStats();
+    state.courses = [];
+    if (state.currentPage === 'courses') loadCourses();
+    if (s.auto_download_task_id && state.autoDownloadStartedFor !== s.auto_download_task_id) {
+      state.autoDownloadStartedFor = s.auto_download_task_id;
+      _pollAutoDownloadTask(s.auto_download_task_id, messageLog);
     }
-  } catch {}
+  }
+}
+
+async function updatePlayerUI() {
+  try { _applyPlayerStatus(await api('GET', '/api/player/status')); } catch {}
 }
 
 // 재생 중지
@@ -448,143 +477,160 @@ async function loadCourseDetail(courseId, courseName) {
   weeks.innerHTML = '<div class="p-6 text-slate-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i>불러오는 중...</div>';
   $('#detail-course-name').textContent = courseName;
   $('#detail-professors').textContent = '';
+  _filter.query = '';
+  _filter.completion = 'all';
+  const fq = $('#filter-query'); if (fq) fq.value = '';
+  const fc = $('#filter-completion'); if (fc) fc.value = 'all';
 
   try {
     const data = await api('GET', `/api/courses/${courseId}`);
     if (state.currentCourseId !== courseId) return;
     $('#detail-professors').textContent = data.professors || '';
-    weeks.innerHTML = '';
-
-    if (!data.weeks || data.weeks.length === 0) {
-      weeks.innerHTML = '<div class="p-6 text-slate-400 text-sm">강의 정보가 없습니다.</div>';
-      return;
-    }
-
-    let renderedSections = 0;
-    data.weeks.forEach(week => {
-      const videos = week.lectures.filter(l => l.is_video);
-      if (videos.length === 0) return;
-      renderedSections += 1;
-
-      const section = document.createElement('div');
-      section.className = 'px-6 py-4';
-      section.innerHTML = `
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="text-sm font-bold text-slate-300">${esc(week.title)}</h4>
-          ${week.pending_count > 0 ? `<span class="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">${week.pending_count} 미수강</span>` : ''}
-        </div>
-        <div class="flex flex-col gap-2" data-week-rows></div>
-      `;
-      const rowContainer = section.querySelector('[data-week-rows]');
-      videos.forEach(lec => {
-        const comp = lec.completion === 'completed' ? 'completed' : 'incomplete';
-        const row = document.createElement('div');
-        row.className = 'lecture-row flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer';
-        row.dataset.url = lec.full_url;
-        row.dataset.title = lec.title;
-        row.dataset.week = lec.week_label;
-        row.dataset.course = courseId;
-        row.innerHTML = `
-          <div class="w-7 h-7 rounded-lg ${comp === 'completed' ? 'bg-emerald-500/10' : 'bg-slate-800'} flex items-center justify-center shrink-0">
-            <i class="fa-solid ${comp === 'completed' ? 'fa-circle-check text-emerald-400' : 'fa-play text-slate-500'} text-xs"></i>
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm text-slate-200 truncate"></p>
-            ${lec.duration ? `<p class="text-xs text-slate-500"></p>` : ''}
-          </div>
-          <span class="completion-badge ${comp} shrink-0 text-xs px-2 py-0.5 border rounded-full font-medium">
-            ${comp === 'completed' ? '완료' : '미수강'}
-          </span>
-          <div class="shrink-0 flex items-center gap-2" data-actions></div>
-        `;
-        row.querySelector('.flex-1 p:first-child').textContent = lec.title;
-        if (lec.duration) row.querySelector('.flex-1 p:last-child').textContent = lec.duration;
-        const actions = row.querySelector('[data-actions]');
-        if (lec.needs_watch) {
-          const playBtn = document.createElement('button');
-          playBtn.className = 'btn-play-lec px-3 py-1 bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold rounded-lg transition-all';
-          playBtn.textContent = '재생';
-          actions.appendChild(playBtn);
-        }
-        const dlInfo = lec.download_info || {};
-        const aiEnabled = settings.AI_ENABLED === 'true';
-        if (settings.DOWNLOAD_ENABLED === 'true') {
-          if (dlInfo.exists) {
-            const badge = document.createElement('span');
-            badge.className = 'shrink-0 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-full font-medium';
-            badge.textContent = '다운로드됨';
-            actions.appendChild(badge);
-            if (aiEnabled && !(lec.summary && lec.summary.available)) {
-              const sumFromFileBtn = document.createElement('button');
-              sumFromFileBtn.className = 'btn-summarize-from-file px-3 py-1 bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-bold rounded-lg transition-all';
-              sumFromFileBtn.textContent = 'AI 요약';
-              sumFromFileBtn.dataset.courseId = courseId;
-              sumFromFileBtn.dataset.lectureTitle = lec.title;
-              sumFromFileBtn.dataset.weekLabel = lec.week_label;
-              actions.appendChild(sumFromFileBtn);
-            }
-          } else {
-            const downloadBtn = document.createElement('button');
-            downloadBtn.className = 'btn-download-lec px-3 py-1 bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold rounded-lg transition-all';
-            downloadBtn.textContent = '영상 다운로드';
-            actions.appendChild(downloadBtn);
-            const downloadStatus = document.createElement('span');
-            downloadStatus.className = 'download-status hidden text-xs text-slate-400';
-            actions.appendChild(downloadStatus);
-          }
-        }
-        if (lec.summary && lec.summary.available && lec.summary.id) {
-          row.dataset.summaryId = lec.summary.id;
-          const summaryBtn = document.createElement('button');
-          summaryBtn.className = 'btn-summary-lec px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold rounded-lg transition-all';
-          summaryBtn.textContent = '요약 내용 보기';
-          actions.appendChild(summaryBtn);
-        }
-        rowContainer.appendChild(row);
-      });
-      weeks.appendChild(section);
-    });
-
-    if (renderedSections === 0) {
-      weeks.innerHTML = '<div class="p-6 text-slate-400 text-sm">표시할 영상 강의가 없습니다.</div>';
-      return;
-    }
-
-    // 재생 버튼 이벤트
-    $$('.btn-play-lec', weeks).forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const row = btn.closest('.lecture-row');
-        await playLecture(row.dataset.course, row.dataset.url, row.dataset.title, row.dataset.week);
-      });
-    });
-    $$('.btn-download-lec', weeks).forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const row = btn.closest('.lecture-row');
-        await startDownload(row, btn);
-      });
-    });
-    $$('.btn-summarize-from-file', weeks).forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const row = btn.closest('.lecture-row');
-        await startSummarizeFromFile(btn.dataset.courseId, btn.dataset.lectureTitle, btn.dataset.weekLabel, row, btn);
-      });
-    });
-    $$('.btn-summary-lec', weeks).forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const row = btn.closest('.lecture-row');
-        await openSummary(row.dataset.summaryId, row.dataset.title, row.dataset.week);
-      });
-    });
-
+    state.currentCourseDetail = data;
+    _renderCourseWeeks(data, courseId);
   } catch (err) {
     if (state.currentCourseId === courseId) {
       weeks.innerHTML = `<div class="p-6 text-red-400 text-sm">${esc(err.message)}</div>`;
     }
   }
+}
+
+function _renderCourseWeeks(data, courseId) {
+  const weeks = $('#detail-weeks');
+  weeks.innerHTML = '';
+
+  if (!data.weeks || data.weeks.length === 0) {
+    weeks.innerHTML = '<div class="p-6 text-slate-400 text-sm">강의 정보가 없습니다.</div>';
+    return;
+  }
+
+  const q = _filter.query.toLowerCase();
+  let renderedSections = 0;
+  data.weeks.forEach(week => {
+    const videos = week.lectures.filter(l => {
+      if (!l.is_video) return false;
+      if (_filter.completion === 'pending' && l.completion === 'completed') return false;
+      if (_filter.completion === 'completed' && l.completion !== 'completed') return false;
+      if (q && !l.title.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    if (videos.length === 0) return;
+    renderedSections += 1;
+
+    const section = document.createElement('div');
+    section.className = 'px-6 py-4';
+    section.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="text-sm font-bold text-slate-300">${esc(week.title)}</h4>
+        ${week.pending_count > 0 ? `<span class="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">${week.pending_count} 미수강</span>` : ''}
+      </div>
+      <div class="flex flex-col gap-2" data-week-rows></div>
+    `;
+    const rowContainer = section.querySelector('[data-week-rows]');
+    videos.forEach(lec => {
+      const comp = lec.completion === 'completed' ? 'completed' : 'incomplete';
+      const row = document.createElement('div');
+      row.className = 'lecture-row flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer';
+      row.dataset.url = lec.full_url;
+      row.dataset.title = lec.title;
+      row.dataset.week = lec.week_label;
+      row.dataset.course = courseId;
+      row.innerHTML = `
+        <div class="w-7 h-7 rounded-lg ${comp === 'completed' ? 'bg-emerald-500/10' : 'bg-slate-800'} flex items-center justify-center shrink-0">
+          <i class="fa-solid ${comp === 'completed' ? 'fa-circle-check text-emerald-400' : 'fa-play text-slate-500'} text-xs"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm text-slate-200 truncate"></p>
+          ${lec.duration ? `<p class="text-xs text-slate-500"></p>` : ''}
+        </div>
+        <span class="completion-badge ${comp} shrink-0 text-xs px-2 py-0.5 border rounded-full font-medium">
+          ${comp === 'completed' ? '완료' : '미수강'}
+        </span>
+        <div class="shrink-0 flex items-center gap-2" data-actions></div>
+      `;
+      row.querySelector('.flex-1 p:first-child').textContent = lec.title;
+      if (lec.duration) row.querySelector('.flex-1 p:last-child').textContent = lec.duration;
+      const actions = row.querySelector('[data-actions]');
+      {
+        const playBtn = document.createElement('button');
+        playBtn.className = lec.needs_watch
+          ? 'btn-play-lec px-3 py-1 bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold rounded-lg transition-all'
+          : 'btn-play-lec px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-bold rounded-lg transition-all';
+        playBtn.textContent = lec.needs_watch ? '재생' : '다시 재생';
+        actions.appendChild(playBtn);
+      }
+      const dlInfo = lec.download_info || {};
+      const aiEnabled = state.settings.AI_ENABLED === 'true';
+      if (state.settings.DOWNLOAD_ENABLED === 'true' || comp === 'completed') {
+        if (dlInfo.exists) {
+          const badge = document.createElement('span');
+          badge.className = 'shrink-0 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-full font-medium';
+          badge.textContent = '다운로드됨';
+          actions.appendChild(badge);
+          if (aiEnabled && !(lec.summary && lec.summary.available)) {
+            const sumFromFileBtn = document.createElement('button');
+            sumFromFileBtn.className = 'btn-summarize-from-file px-3 py-1 bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/30 text-violet-300 text-xs font-bold rounded-lg transition-all';
+            sumFromFileBtn.textContent = 'AI 요약';
+            sumFromFileBtn.dataset.courseId = courseId;
+            sumFromFileBtn.dataset.lectureTitle = lec.title;
+            sumFromFileBtn.dataset.weekLabel = lec.week_label;
+            actions.appendChild(sumFromFileBtn);
+          }
+        } else {
+          const downloadBtn = document.createElement('button');
+          downloadBtn.className = 'btn-download-lec px-3 py-1 bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold rounded-lg transition-all';
+          downloadBtn.textContent = '영상 다운로드';
+          actions.appendChild(downloadBtn);
+          const downloadStatus = document.createElement('span');
+          downloadStatus.className = 'download-status hidden text-xs text-slate-400';
+          actions.appendChild(downloadStatus);
+        }
+      }
+      if (lec.summary && lec.summary.available && lec.summary.id) {
+        row.dataset.summaryId = lec.summary.id;
+        const summaryBtn = document.createElement('button');
+        summaryBtn.className = 'btn-summary-lec px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold rounded-lg transition-all';
+        summaryBtn.textContent = '요약 내용 보기';
+        actions.appendChild(summaryBtn);
+      }
+      rowContainer.appendChild(row);
+    });
+    weeks.appendChild(section);
+  });
+
+  if (renderedSections === 0) {
+    weeks.innerHTML = '<div class="p-6 text-slate-400 text-sm">검색 결과가 없습니다.</div>';
+    return;
+  }
+
+  $$('.btn-play-lec', weeks).forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.lecture-row');
+      await playLecture(row.dataset.course, row.dataset.url, row.dataset.title, row.dataset.week);
+    });
+  });
+  $$('.btn-download-lec', weeks).forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.lecture-row');
+      await startDownload(row, btn);
+    });
+  });
+  $$('.btn-summarize-from-file', weeks).forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.lecture-row');
+      await startSummarizeFromFile(btn.dataset.courseId, btn.dataset.lectureTitle, btn.dataset.weekLabel, row, btn);
+    });
+  });
+  $$('.btn-summary-lec', weeks).forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.lecture-row');
+      await openSummary(row.dataset.summaryId, row.dataset.title, row.dataset.week);
+    });
+  });
 }
 
 function setDownloadStatus(row, message, tone = 'slate') {
@@ -816,52 +862,41 @@ async function startSummarizeFromFile(courseId, lectureTitle, weekLabel, row, bu
   }
 }
 
-function startAutoDownloadAfterPlayback(playerStatus, messageLog) {
-  messageLog.textContent = '재생 완료 후 자동 다운로드를 시작합니다.';
+function _pollAutoDownloadTask(taskId, messageLog) {
+  if (!taskId) return;
+  messageLog.textContent = '재생 완료 후 자동 다운로드 진행 중...';
   messageLog.classList.remove('hidden');
-
-  startDownloadPayload({
-    course_id: playerStatus.course_id,
-    lecture_url: playerStatus.lecture_url,
-    lecture_title: playerStatus.lecture_title,
-    week_label: playerStatus.week_label || '',
-  }).then(taskId => {
-    const update = async () => {
-      try {
-        const task = await api('GET', `/api/tasks/${taskId}`);
-        const pct = Number.isFinite(task.progress_pct) ? ` ${Math.round(task.progress_pct)}%` : '';
-        if (task.status === 'completed') {
-          stopDownloadTaskPolling(taskId);
-          const files = (task.result?.files || []).filter(f => f.deleted !== 'true');
-          const fileText = files.length
-            ? '완료: ' + files.map(f => f.path.split('/').pop()).join(', ')
-            : '다운로드 완료';
-          messageLog.textContent = `자동 다운로드 ${fileText}`;
-          return;
-        }
-        if (task.status === 'failed') {
-          stopDownloadTaskPolling(taskId);
-          messageLog.textContent = `자동 다운로드 실패: ${task.error || '알 수 없는 오류'}`;
-          return;
-        }
-        if (task.status === 'cancelled') {
-          stopDownloadTaskPolling(taskId);
-          messageLog.textContent = '자동 다운로드가 취소되었습니다.';
-          return;
-        }
-        messageLog.textContent = `자동 다운로드 중: ${task.message || task.stage}${pct}`;
-      } catch (err) {
+  const update = async () => {
+    try {
+      const task = await api('GET', `/api/tasks/${taskId}`);
+      const pct = Number.isFinite(task.progress_pct) ? ` ${Math.round(task.progress_pct)}%` : '';
+      if (task.status === 'completed') {
         stopDownloadTaskPolling(taskId);
-        messageLog.textContent = `자동 다운로드 상태 확인 실패: ${err.message}`;
+        const files = (task.result?.files || []).filter(f => f.deleted !== 'true');
+        messageLog.textContent = files.length
+          ? '자동 다운로드 완료: ' + files.map(f => f.path.split('/').pop()).join(', ')
+          : '자동 다운로드 완료';
+        return;
       }
-    };
-    update();
-    stopDownloadTaskPolling(taskId);
-    state.downloadTaskTimers[taskId] = setInterval(update, 1500);
-  }).catch(err => {
-    messageLog.textContent = `자동 다운로드 시작 실패: ${err.message}`;
-    messageLog.classList.remove('hidden');
-  });
+      if (task.status === 'failed') {
+        stopDownloadTaskPolling(taskId);
+        messageLog.textContent = `자동 다운로드 실패: ${task.error || '알 수 없는 오류'}`;
+        return;
+      }
+      if (task.status === 'cancelled') {
+        stopDownloadTaskPolling(taskId);
+        messageLog.textContent = '자동 다운로드가 취소되었습니다.';
+        return;
+      }
+      messageLog.textContent = `자동 다운로드 중: ${task.message || task.stage || ''}${pct}`;
+    } catch (err) {
+      stopDownloadTaskPolling(taskId);
+      messageLog.textContent = `자동 다운로드 상태 확인 실패: ${err.message}`;
+    }
+  };
+  update();
+  stopDownloadTaskPolling(taskId);
+  state.downloadTaskTimers[taskId] = setInterval(update, 1500);
 }
 
 async function playLecture(courseId, url, title, weekLabel) {
@@ -956,49 +991,50 @@ function updateScheduleLabel(hours) {
   $('#auto-schedule-label').textContent = sorted.map(h => `${String(h).padStart(2,'0')}시`).join('·');
 }
 
-async function updateAutoUI() {
-  try {
-    const s = await api('GET', '/api/auto/status');
-    state.autoEnabled = s.enabled;
-    state.autoScheduleHours = s.schedule_hours || [9, 13, 18, 23];
+function _applyAutoStatus(s) {
+  state.autoEnabled = s.enabled;
+  state.autoScheduleHours = s.schedule_hours || [9, 13, 18, 23];
 
-    const toggle = $('#toggle-auto');
-    if (toggle.checked !== s.enabled) toggle.checked = s.enabled;
+  const toggle = $('#toggle-auto');
+  if (toggle.checked !== s.enabled) toggle.checked = s.enabled;
 
-    updateScheduleLabel(state.autoScheduleHours);
+  updateScheduleLabel(state.autoScheduleHours);
 
-    const statusRow = $('#auto-status-row');
-    if (s.enabled) {
-      statusRow.classList.remove('hidden');
-      $('#auto-processed').textContent = s.processed_count || 0;
-      if (s.current_lecture) {
-        $('#auto-current').classList.remove('hidden');
-        $('#auto-current-text').textContent = `${s.current_course} · ${s.current_lecture}`;
-      } else {
-        $('#auto-current').classList.add('hidden');
-      }
-      if (s.next_run_at) {
-        $('#auto-next-row').classList.remove('hidden');
-        $('#auto-next').textContent = s.next_run_at;
-      } else {
-        $('#auto-next-row').classList.add('hidden');
-      }
-      if (s.pipeline_stage) {
-        $('#auto-pipeline-row').classList.remove('hidden');
-        $('#auto-pipeline-text').textContent = s.pipeline_stage;
-      } else {
-        $('#auto-pipeline-row').classList.add('hidden');
-      }
-      if (s.error) {
-        $('#auto-error').textContent = s.error;
-        $('#auto-error').classList.remove('hidden');
-      } else {
-        $('#auto-error').classList.add('hidden');
-      }
+  const statusRow = $('#auto-status-row');
+  if (s.enabled) {
+    statusRow.classList.remove('hidden');
+    $('#auto-processed').textContent = s.processed_count || 0;
+    if (s.current_lecture) {
+      $('#auto-current').classList.remove('hidden');
+      $('#auto-current-text').textContent = `${s.current_course} · ${s.current_lecture}`;
     } else {
-      statusRow.classList.add('hidden');
+      $('#auto-current').classList.add('hidden');
     }
-  } catch {}
+    if (s.next_run_at) {
+      $('#auto-next-row').classList.remove('hidden');
+      $('#auto-next').textContent = s.next_run_at;
+    } else {
+      $('#auto-next-row').classList.add('hidden');
+    }
+    if (s.pipeline_stage) {
+      $('#auto-pipeline-row').classList.remove('hidden');
+      $('#auto-pipeline-text').textContent = s.pipeline_stage;
+    } else {
+      $('#auto-pipeline-row').classList.add('hidden');
+    }
+    if (s.error) {
+      $('#auto-error').textContent = s.error;
+      $('#auto-error').classList.remove('hidden');
+    } else {
+      $('#auto-error').classList.add('hidden');
+    }
+  } else {
+    statusRow.classList.add('hidden');
+  }
+}
+
+async function updateAutoUI() {
+  try { _applyAutoStatus(await api('GET', '/api/auto/status')); } catch {}
 }
 
 function _showAutoWarnings(warnings) {
@@ -1136,6 +1172,85 @@ $$('.log-filter').forEach(btn => {
 });
 
 $('#btn-refresh-logs').addEventListener('click', () => loadLogs());
+
+// ═══════════════════════════════════════════════════════════════
+// 설정 배너 (2-F)
+// ═══════════════════════════════════════════════════════════════
+function _checkSettingsBanner(settings) {
+  const s = settings || state.settings;
+  const missing = [];
+  if (s.AI_ENABLED === 'true' && !s.GOOGLE_API_KEY) missing.push('Google API 키 미설정');
+  if (s.TELEGRAM_ENABLED === 'true' && !s.TELEGRAM_BOT_TOKEN) missing.push('텔레그램 봇 토큰 미설정');
+  const banner = $('#settings-banner');
+  if (!banner) return;
+  if (missing.length) {
+    $('#settings-banner-msg').textContent = missing.join(' · ');
+    banner.classList.remove('hidden');
+    banner.classList.add('flex');
+  } else {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }
+}
+
+$('#settings-banner-btn')?.addEventListener('click', () => navigate('settings'));
+
+// ═══════════════════════════════════════════════════════════════
+// 미제출 항목 모달 (2-B)
+// ═══════════════════════════════════════════════════════════════
+async function showPendingItemsModal(type) {
+  const modal = $('#pending-modal');
+  const content = $('#pending-modal-content');
+  $('#pending-modal-label').textContent = type === 'assignments' ? 'Assignments' : 'Quizzes';
+  $('#pending-modal-title').textContent = type === 'assignments' ? '미제출 과제 목록' : '미제출 퀴즈 목록';
+  content.innerHTML = '<p class="text-slate-400 text-sm p-2"><i class="fa-solid fa-spinner fa-spin mr-2"></i>불러오는 중...</p>';
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+  try {
+    const res = await api('GET', '/api/courses/pending-items');
+    const items = type === 'assignments' ? res.assignments : res.quizzes;
+    if (!items || items.length === 0) {
+      content.innerHTML = '<p class="text-slate-400 text-sm p-2">미제출 항목이 없습니다.</p>';
+      return;
+    }
+    content.innerHTML = items.map(item => `
+      <div class="px-4 py-3 bg-slate-800/50 rounded-xl border border-slate-700">
+        <p class="text-sm font-medium text-slate-200">${esc(item.title)}</p>
+        <p class="text-xs text-slate-400 mt-0.5">${esc(item.course)}${item.end_date ? ' · 마감: ' + esc(item.end_date) : ''}</p>
+      </div>
+    `).join('');
+  } catch (err) {
+    content.innerHTML = `<p class="text-red-400 text-sm p-2">${esc(err.message)}</p>`;
+  }
+}
+
+function _closePendingModal() {
+  $('#pending-modal').classList.add('hidden');
+  $('#pending-modal').classList.remove('flex');
+  document.body.style.overflow = '';
+}
+
+$('#card-stat-assignments')?.addEventListener('click', () => showPendingItemsModal('assignments'));
+$('#card-stat-quizzes')?.addEventListener('click', () => showPendingItemsModal('quizzes'));
+$('#btn-close-pending-modal')?.addEventListener('click', _closePendingModal);
+$('#pending-modal-backdrop')?.addEventListener('click', _closePendingModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#pending-modal').classList.contains('hidden')) _closePendingModal();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 필터 / 검색 (2-E)
+// ═══════════════════════════════════════════════════════════════
+$('#filter-query')?.addEventListener('input', (e) => {
+  _filter.query = e.target.value.trim();
+  if (state.currentCourseDetail) _renderCourseWeeks(state.currentCourseDetail, state.currentCourseId);
+});
+
+$('#filter-completion')?.addEventListener('change', (e) => {
+  _filter.completion = e.target.value;
+  if (state.currentCourseDetail) _renderCourseWeeks(state.currentCourseDetail, state.currentCourseId);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 초기화

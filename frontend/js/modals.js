@@ -18,6 +18,7 @@ function _closeSttModal() {
   modal.classList.add('hidden');
   modal.classList.remove('flex');
   document.body.style.overflow = '';
+  $('#btn-download-stt')?.classList.add('hidden');
 }
 
 export async function openSttText(taskId, lectureTitle) {
@@ -25,6 +26,11 @@ export async function openSttText(taskId, lectureTitle) {
   $('#modal-stt-title').textContent = lectureTitle || 'STT 변환 결과';
   $('#modal-stt-meta').textContent = '';
   $('#modal-stt-content').innerHTML = '<span class="text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>STT 결과를 불러오는 중...</span>';
+  const dlBtn = $('#btn-download-stt');
+  if (dlBtn) {
+    dlBtn.classList.remove('hidden');
+    dlBtn.onclick = () => { window.location.href = `/api/tasks/${taskId}/stt/download`; };
+  }
   _openSttModal();
 
   try {
@@ -61,6 +67,7 @@ function _closeSummaryModal() {
   modal.classList.remove('flex');
   document.body.style.overflow = '';
   state.currentSummaryId = null;
+  $('#btn-download-summary')?.classList.add('hidden');
 }
 
 export async function openSummary(summaryId, lectureTitle, weekLabel) {
@@ -70,6 +77,11 @@ export async function openSummary(summaryId, lectureTitle, weekLabel) {
   $('#modal-summary-title').textContent = lectureTitle || '강의 요약';
   $('#modal-summary-meta').textContent = [state.currentCourseName, weekLabel].filter(Boolean).join(' · ');
   $('#modal-summary-content').innerHTML = '<p class="text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>요약을 불러오는 중...</p>';
+  const dlBtn = $('#btn-download-summary');
+  if (dlBtn) {
+    dlBtn.classList.remove('hidden');
+    dlBtn.onclick = () => { window.location.href = `/api/summaries/${encodeURIComponent(summaryId)}/download`; };
+  }
   _openSummaryModal();
 
   try {

@@ -108,6 +108,51 @@ async def _notify_playback_error(course_name: str, week_label: str, lecture_titl
         )
 
 
+def _schedule_auto_download(req: PlayRequest, course, play_task_id: str) -> None:
+    """재생 완료 후 자동 다운로드 task를 백그라운드로 생성한다."""
+    from src.config import Config
+    from src.downloader.pipeline import download_lecture_media
+
+    async def run(managed: ManagedTask) -> dict:
+        def on_stage(stage: str, message: str, progress_pct: float | None = None) -> None:
+            managed.update(stage=stage, message=message, progress_pct=progress_pct)
+
+        return await download_lecture_media(
+            page=app_state.scraper._page,
+            lecture_url=req.lecture_url,
+            lecture_title=req.lecture_title,
+            week_label=req.week_label,
+            course_name=course.long_name,
+            download_dir=Config.get_download_dir(),
+            rule=Config.get_download_rule(),
+            stt_enabled=Config.STT_ENABLED == "true",
+            stt_model=Config.WHISPER_MODEL or "base",
+            stt_language=Config.STT_LANGUAGE or "",
+            delete_audio_after_stt=Config.STT_DELETE_AUDIO_AFTER_TRANSCRIBE == "true",
+            ai_enabled=Config.AI_ENABLED == "true",
+            ai_agent=Config.AI_AGENT or "gemini",
+            ai_api_key=Config.GOOGLE_API_KEY or "",
+            ai_model=Config.GEMINI_MODEL or "",
+            summary_prompt_template=Config.get_summary_prompt_template(),
+            summary_prompt_extra=Config.SUMMARY_PROMPT_EXTRA or "",
+            delete_text_after_summary=Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "true",
+            on_stage=on_stage,
+        )
+
+    managed = task_manager.create(
+        "download",
+        run,
+        metadata={
+            "course_id": req.course_id,
+            "course_name": course.long_name,
+            "lecture_title": req.lecture_title,
+            "week_label": req.week_label,
+            "source_play_task_id": play_task_id,
+        },
+    )
+    app_state.auto_download_task_id = managed.id
+
+
 @router.post("/play")
 async def start_play(req: PlayRequest):
     _require_auth()
@@ -126,6 +171,7 @@ async def start_play(req: PlayRequest):
     app_state.current_course_name = course.long_name
     app_state.current_course_id = course.id
     app_state.playback = PlaybackProgress(status="playing")
+    app_state.auto_download_task_id = None
     app_state.is_playing = True
     log_buffer: list[str] = []
 
@@ -211,6 +257,10 @@ async def start_play(req: PlayRequest):
                     metadata={"task_id": managed.id, "cache_updated": updated},
                 )
                 await _notify_playback_complete(course.long_name, req.week_label, req.lecture_title)
+                from src.config import Config
+
+                if Config.DOWNLOAD_ENABLED == "true" and Config.AUTO_DOWNLOAD_AFTER_PLAY == "true":
+                    _schedule_auto_download(req, course, managed.id)
             else:
                 app_state.playback.status = "stopped"
                 managed.update(status="cancelled", stage="stopped", message="재생이 완료되지 않았습니다.")
@@ -355,4 +405,5 @@ async def get_status():
         "log_path": pb.log_path,
         "refresh_recommended": pb.refresh_recommended,
         "task_id": app_state.play_task_id,
+        "auto_download_task_id": app_state.auto_download_task_id,
     }

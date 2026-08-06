@@ -18,6 +18,24 @@ async def get_summaries_list():
     return {"summaries": list_summaries()}
 
 
+@router.get("/{summary_id}/download")
+async def download_summary(summary_id: str):
+    """요약 파일을 다운로드한다."""
+    from pathlib import Path
+
+    from backend.api.summary_store import _decode_summary_id
+    from fastapi.responses import FileResponse
+
+    _require_auth()
+    try:
+        path = Path(_decode_summary_id(summary_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="요약 파일을 찾을 수 없습니다.")
+    return FileResponse(path=path, filename=path.name, media_type="text/plain; charset=utf-8")
+
+
 @router.get("/{summary_id}")
 async def get_summary(summary_id: str):
     _require_auth()

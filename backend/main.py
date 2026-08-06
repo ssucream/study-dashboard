@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 from backend.api.routes import auth, auto, courses, deadline, logs, player, settings, summaries, tasks
+from backend.api.routes import ws as ws_route
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -63,6 +64,7 @@ app.include_router(summaries.router, prefix="/api/summaries", tags=["summaries"]
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 app.include_router(deadline.router, prefix="/api/deadline", tags=["deadline"])
+app.include_router(ws_route.router)
 
 
 @app.get("/api/health")
@@ -87,6 +89,6 @@ from pathlib import Path  # noqa: E402
 
 _frontend_dir = Path(__file__).parent.parent / "frontend"
 if _frontend_dir.is_dir():
-    from fastapi.staticfiles import StaticFiles  # noqa: E402
+    from fastapi.staticfiles import StaticFiles
 
     app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")

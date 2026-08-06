@@ -6,17 +6,15 @@
 ## 실행 방법
 
 ```bash
-docker compose run --rm study-helper          # 정상 실행 (TUI 직접 연결)
-docker compose build && docker compose run --rm study-helper  # 이미지 재빌드 후 실행
+docker compose up              # 정상 실행 (backend: FastAPI :8000, frontend: nginx :3000/:3443)
+docker compose up --build      # 이미지 재빌드 후 실행
 ```
 
-- **`docker compose up` 사용 금지**: 로그 멀티플렉싱으로 TUI 깨짐. `run --rm`만 사용할 것
-- `src/`는 볼륨 마운트되어 있어 코드 수정 후 재빌드 없이 재실행만 해도 반영됨
-- 다운로드 파일은 `./data/`에 저장됨 (컨테이너 내 `/data/`)
-- 설정 DB는 `./data/app.db`에 영속화됨 (컨테이너 내 `/data/app.db`)
+- 웹 대시보드(backend + frontend 2서비스) 구조이므로 TUI 시절의 `run --rm` 대신 `up` 사용
+- `src/`, `backend/`는 볼륨 마운트되어 있어 코드 수정 후 재빌드 없이 반영됨 (uvicorn `--reload`)
+- 다운로드 파일은 `./downloads/`에 저장됨 (컨테이너 내 `/downloads`)
+- 설정 DB는 `./db/app.db`에 영속화됨 (컨테이너 내 `/db/app.db`)
 - Whisper 모델, Playwright Chromium은 named volume에 캐시되어 재빌드 시 재다운로드 불필요
-
-Docker Hub 릴리즈 이미지 사용 시: `docker-compose.yml` 상단 주석 참고.
 
 ## 개발 환경 설정
 
@@ -35,8 +33,8 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 
 - **STT 엔진**: faster-whisper (CTranslate2 기반, torch 불필요). base 모델이 기본값.
 - **요약 엔진**: Gemini API (gemini-2.5-flash 등). 키는 DB에서 암호화 로드.
-- **설정 저장소**: SQLite (`data/app.db`) — `crypto.py`로 민감값 암호화 후 저장.
-- **다운로드 경로**: 컨테이너 내 `/download` — 기본 compose에서 호스트 `/download`를 마운트.
+- **설정 저장소**: SQLite (`db/app.db`) — `crypto.py`로 민감값 암호화 후 저장.
+- **다운로드 경로**: 컨테이너 내 `/downloads` — 기본 compose에서 호스트 `./downloads`를 마운트.
 - **출력 파일**: mp4(영상), mp3(음성, ffmpeg 변환), txt(STT 결과), `_summarized.txt`(요약).
 - **백그라운드 재생**: video DOM 폴링(Plan A) + 진도 API 직접 호출(Plan B). Plan A 실패 시 자동 전환.
 - **자동 모드**: `ui/auto.py` — 미완료 강의 일괄 재생.
@@ -87,7 +85,7 @@ study-helper/
 
 ## 설정 DB 스키마 (SQLite)
 
-`data/app.db` — `src/crypto.py`로 민감값 암호화 저장.
+`db/app.db` — `src/crypto.py`로 민감값 암호화 저장.
 
 ```sql
 -- 설정 key-value 저장소 (.env 대체)
@@ -112,7 +110,7 @@ CREATE TABLE settings (
 | `LMS_USER_ID` | 학번 (메모리 세션 전용, DB 저장 금지) | — |
 | `LMS_PASSWORD` | 비밀번호 (메모리 세션 전용, DB 저장 금지) | — |
 | `DOWNLOAD_ENABLED` | 영상 다운로드 사용 여부 | `true` / `false` |
-| `DOWNLOAD_DIR` | 다운로드 경로 (비워두면 자동) | `/download` |
+| `DOWNLOAD_DIR` | 다운로드 경로 (비워두면 자동) | `/downloads` |
 | `DOWNLOAD_RULE` | 다운로드 규칙 | `mp4` / `mp3` / `both` |
 | `AUTO_DOWNLOAD_AFTER_PLAY` | 재생 완료 후 자동 다운로드 | `true` / `false` |
 | `STT_ENABLED` | STT 사용 여부 | `true` / `false` |

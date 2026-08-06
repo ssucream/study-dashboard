@@ -1,7 +1,9 @@
 name: Build & Publish Docker Image
 
 on:
-  workflow_dispatch: # 프로젝트 재건 중 — 준비 완료 후 태그 트리거로 복구
+  push:
+    tags:
+      - 'v*'   # v1.0.0, v1.0.0-beta 등 v로 시작하는 태그 push 시 자동 실행
 
 permissions:
   contents: write  # GitHub Release 생성 권한

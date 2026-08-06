@@ -49,6 +49,7 @@ class AppState:
     play_task: asyncio.Task | None = None
     play_task_id: str | None = None
     auto: AutoModeState = field(default_factory=AutoModeState)
+    auto_download_task_id: str | None = None
 
 
 app_state = AppState()

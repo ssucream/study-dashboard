@@ -30,4 +30,6 @@ export const state = {
   },
   settingsLoaded: false,
   autoDownloadStartedFor: '',
+  deadlineChecked: false,
+  currentCourseDetail: null,
 };

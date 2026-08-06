@@ -83,6 +83,7 @@ def summarize(
     extra_prompt: str = "",
     course_name: str = "",
     prompt_template: str = "",
+    output_path: Path | None = None,
 ) -> Path:
     """
     텍스트 파일을 AI로 요약한다.
@@ -115,7 +116,8 @@ def summarize(
     else:
         raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
 
-    out_path = txt_path.with_stem(txt_path.stem + "_summarized")
+    out_path = output_path if output_path else txt_path.with_stem(txt_path.stem + "_summarized")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(summary, encoding="utf-8")
     return out_path
 

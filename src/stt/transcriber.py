@@ -16,6 +16,7 @@ def transcribe(
     model_size: str = "base",
     language: str = "",
     on_model_loaded: "callable | None" = None,
+    output_path: Path | None = None,
 ) -> Path:
     """
     faster-whisper로 음성 파일을 텍스트로 변환한다.
@@ -53,6 +54,7 @@ def transcribe(
     segments, _ = model.transcribe(str(audio_path), **transcribe_kwargs)
     text = "".join(segment.text for segment in segments)
 
-    txt_path = audio_path.with_suffix(".txt")
+    txt_path = output_path if output_path else audio_path.with_suffix(".txt")
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path.write_text(text, encoding="utf-8")
     return txt_path

@@ -128,6 +128,40 @@ async def refresh_courses():
     return {"success": True, "count": len(courses)}
 
 
+@router.get("/pending-items")
+async def get_pending_items():
+    """미제출 과제·퀴즈 항목 목록을 반환한다."""
+    _require_auth()
+    if not app_state.details:
+        raise HTTPException(status_code=409, detail="강의 목록이 로드되지 않았습니다. 과목 목록을 먼저 불러오세요.")
+
+    from src.scraper.models import LectureType
+
+    assignments: list[dict] = []
+    quizzes: list[dict] = []
+    for i, detail in enumerate(app_state.details):
+        if not detail:
+            continue
+        course = app_state.courses[i] if i < len(app_state.courses) else None
+        course_name = course.long_name if course else ""
+        for week in detail.weeks:
+            for lec in week.lectures:
+                if not lec.needs_submission:
+                    continue
+                item = {
+                    "course": course_name,
+                    "title": lec.title,
+                    "week": lec.week_label,
+                    "end_date": lec.end_date or "",
+                }
+                if lec.lecture_type == LectureType.ASSIGNMENT:
+                    assignments.append(item)
+                elif lec.lecture_type == LectureType.QUIZ:
+                    quizzes.append(item)
+
+    return {"assignments": assignments, "quizzes": quizzes}
+
+
 @router.get("/{course_id}")
 async def get_course_detail(course_id: str):
     _require_auth()
