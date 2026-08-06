@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from src.config import _default_download_dir, _read_version, normalize_download_rule
+from src.config import _default_download_dir, _read_version, get_data_path, normalize_download_rule
 
 
 def test_read_version():
@@ -18,6 +18,18 @@ def test_read_version():
 def test_default_download_dir():
     """다운로드 기본 경로는 컨테이너 내부 /downloads로 고정한다."""
     assert _default_download_dir() == "/downloads"
+
+
+def test_get_data_path_matches_db_mount(monkeypatch):
+    """회귀 테스트: get_data_path()가 docker-compose의 /db 마운트와 일치해야 한다 (예전엔 /data를 봤음)."""
+    monkeypatch.setattr(Path, "exists", lambda self: str(self) == "/db")
+    assert get_data_path("deadline_notified.json") == Path("/db/deadline_notified.json")
+
+
+def test_get_data_path_falls_back_to_local_db_dir(monkeypatch):
+    """/db가 없는 로컬 환경에서는 상대 경로 db/를 사용해야 한다."""
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+    assert get_data_path("deadline_notified.json") == Path("db/deadline_notified.json")
 
 
 def test_normalize_download_rule():

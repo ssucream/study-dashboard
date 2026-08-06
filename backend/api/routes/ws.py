@@ -11,6 +11,9 @@ router = APIRouter()
 
 @router.websocket("/ws/status")
 async def ws_status(websocket: WebSocket) -> None:
+    if not app_state.scraper:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     try:
         while True:

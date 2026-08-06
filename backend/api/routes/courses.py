@@ -118,13 +118,22 @@ async def get_terms():
 @router.post("/refresh")
 async def refresh_courses():
     _require_auth()
+    if app_state.is_playing:
+        raise HTTPException(status_code=409, detail="재생 중에는 새로고침할 수 없습니다.")
+    if app_state.auto.enabled:
+        raise HTTPException(status_code=409, detail="자동 모드 실행 중에는 새로고침할 수 없습니다.")
 
-    app_state.courses = []
-    app_state.details = []
-    courses = await app_state.scraper.fetch_courses()
-    details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
-    app_state.courses = courses
-    app_state.details = details
+    async with _courses_load_lock:
+        try:
+            courses = await app_state.scraper.fetch_courses()
+            details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"강의 정보를 불러오지 못했습니다. ({type(e).__name__})",
+            ) from e
+        app_state.courses = courses
+        app_state.details = details
     return {"success": True, "count": len(courses)}
 
 

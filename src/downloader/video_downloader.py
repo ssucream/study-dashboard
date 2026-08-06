@@ -5,10 +5,12 @@ Playwright로 LMS 강의 페이지에서 video URL을 추출한 뒤,
 requests로 청크 스트리밍 다운로드한다.
 """
 
+import asyncio
 import logging
 import re
 import time
 from collections.abc import Callable
+from functools import partial
 from http.client import IncompleteRead
 from pathlib import Path
 
@@ -242,15 +244,21 @@ async def download_video_with_browser(
 
     referer = "https://commons.ssu.ac.kr/"
     last_error = None
+    loop = asyncio.get_running_loop()
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
-            _stream_download(url, save_path, on_progress, attempt=attempt, cookies=cookies, referer=referer)
+            await loop.run_in_executor(
+                None,
+                partial(
+                    _stream_download, url, save_path, on_progress, attempt=attempt, cookies=cookies, referer=referer
+                ),
+            )
             return save_path.resolve()
         except Exception as e:
             last_error = e
             # 부분 파일은 유지 — 다음 시도에서 Range 헤더로 이어받기
             if attempt < _MAX_RETRIES:
-                time.sleep(2**attempt)
+                await asyncio.sleep(2**attempt)
     _remove_partial(save_path)
     raise last_error
 

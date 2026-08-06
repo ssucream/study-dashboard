@@ -1,5 +1,7 @@
 """crypto.py 단위 테스트."""
 
+import stat
+import threading
 from unittest.mock import patch
 
 
@@ -56,3 +58,57 @@ def test_different_keys_cannot_decrypt(tmp_path):
         from src.crypto import decrypt
 
         assert decrypt(encrypted) == ""
+
+
+def test_key_file_created_with_owner_only_permissions(tmp_path):
+    """키 파일은 생성 시점부터 0o600(소유자만 읽기/쓰기)이어야 한다 (umask로 인한 세계-읽기 노출 방지)."""
+    key_file = tmp_path / ".secret_key"
+    with patch("src.crypto._KEY_PATH", key_file):
+        from src.crypto import _load_or_create_key
+
+        _load_or_create_key()
+
+    mode = stat.S_IMODE(key_file.stat().st_mode)
+    assert mode == 0o600
+
+
+def test_concurrent_key_creation_is_consistent(tmp_path):
+    """회귀 테스트: 여러 스레드가 동시에 키를 생성해도 모두 같은 키를 봐야 한다 (경쟁 시 값 유실 방지)."""
+    key_file = tmp_path / ".secret_key"
+    results: list[bytes] = []
+    lock = threading.Lock()
+
+    with patch("src.crypto._KEY_PATH", key_file):
+        from src.crypto import _load_or_create_key
+
+        def worker():
+            key = _load_or_create_key()
+            with lock:
+                results.append(key)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert len(results) == 8
+    assert len(set(results)) == 1  # 모든 스레드가 동일한 키를 사용해야 함
+
+
+def test_decrypt_invalid_token_logs_warning(tmp_path, caplog):
+    """회귀 테스트: 복호화 실패(InvalidToken)는 조용히 넘어가지 말고 경고 로그를 남겨야 한다."""
+    key_file_1 = tmp_path / "key1"
+    key_file_2 = tmp_path / "key2"
+
+    with patch("src.crypto._KEY_PATH", key_file_1):
+        from src.crypto import encrypt
+
+        encrypted = encrypt("secret")
+
+    with patch("src.crypto._KEY_PATH", key_file_2), caplog.at_level("WARNING"):
+        from src.crypto import decrypt
+
+        assert decrypt(encrypted) == ""
+
+    assert any("복호화 실패" in record.message for record in caplog.records)

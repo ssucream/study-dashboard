@@ -3,8 +3,9 @@ from pathlib import Path
 
 from backend.api.state import PlaybackProgress, app_state
 from backend.api.task_manager import ManagedTask, task_manager
+from backend.api.validators import validate_lecture_url
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from src import event_log
 
@@ -16,6 +17,8 @@ class PlayRequest(BaseModel):
     lecture_url: str
     lecture_title: str
     week_label: str = ""
+
+    _validate_lecture_url = field_validator("lecture_url")(validate_lecture_url)
 
 
 def _require_auth() -> None:
@@ -158,6 +161,8 @@ async def start_play(req: PlayRequest):
     _require_auth()
     if app_state.is_playing:
         raise HTTPException(status_code=409, detail="이미 재생 중입니다.")
+    if app_state.auto.enabled:
+        raise HTTPException(status_code=409, detail="자동 모드 실행 중에는 수동 재생을 시작할 수 없습니다.")
 
     course = next((c for c in app_state.courses if c.id == req.course_id), None)
     if not course:

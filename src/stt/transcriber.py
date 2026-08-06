@@ -5,10 +5,12 @@ mp3/mp4 파일을 faster-whisper에 직접 전달해 텍스트로 변환한다.
 wav 중간 파일은 생성하지 않는다.
 """
 
+import threading
 from pathlib import Path
 
 # 모델 싱글톤 캐시: 동일 크기 모델은 재사용, 다른 크기 요청 시 기존 해제
 _model_cache: dict = {}
+_model_cache_lock = threading.Lock()
 
 
 def transcribe(
@@ -37,9 +39,11 @@ def transcribe(
             "faster-whisper 패키지가 설치되어 있지 않습니다.\n설치: pip install faster-whisper"
         ) from None
 
-    if model_size not in _model_cache:
-        _model_cache.clear()
-        _model_cache[model_size] = WhisperModel(model_size, device="cpu", compute_type="int8")
+    with _model_cache_lock:
+        if model_size not in _model_cache:
+            _model_cache.clear()
+            _model_cache[model_size] = WhisperModel(model_size, device="cpu", compute_type="int8")
+        model = _model_cache[model_size]
 
     if on_model_loaded is not None:
         try:
@@ -47,7 +51,6 @@ def transcribe(
         except Exception:
             pass  # 콜백 실패가 STT 변환을 막지 않도록
 
-    model = _model_cache[model_size]
     transcribe_kwargs = {}
     if language:
         transcribe_kwargs["language"] = language

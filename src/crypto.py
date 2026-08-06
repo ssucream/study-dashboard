@@ -8,6 +8,7 @@
 """
 
 import logging
+import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -50,11 +51,17 @@ def _load_or_create_key() -> bytes:
         return key_file.read_bytes().strip()
 
     key = Fernet.generate_key()
-    key_file.write_bytes(key)
     try:
-        key_file.chmod(0o600)
-    except OSError:
-        pass  # Windows에서는 chmod가 제한적
+        # O_CREAT|O_EXCL로 원자적 생성 — 생성과 동시에 권한을 0o600으로 지정해
+        # umask로 인한 일시적 세계-읽기 가능 창을 없애고, 동시 생성 경쟁을 방지한다.
+        fd = os.open(key_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, key)
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        # 동시에 다른 프로세스/스레드가 먼저 키를 생성함 — 그 키를 사용해야 기존 암호화 값과 정합성이 맞음
+        return key_file.read_bytes().strip()
     return key
 
 
@@ -80,6 +87,7 @@ def decrypt(value: str) -> str:
     try:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken:
+        logger.warning("복호화 실패 — 암호화 키 불일치 또는 손상된 값입니다. 빈 문자열을 반환합니다.")
         return ""
     except Exception as e:
         logger.warning("복호화 중 예상 밖 오류: %s", e)

@@ -56,8 +56,8 @@ def normalize_download_rule(rule: str | None) -> str:
 
 
 def get_data_path(filename: str) -> Path:
-    """데이터 파일 경로를 반환한다. Docker(/data) 또는 로컬(data/)."""
-    base = Path("/data") if Path("/data").exists() else Path("data")
+    """데이터 파일 경로를 반환한다. Docker(/db) 또는 로컬(db/)."""
+    base = Path("/db") if Path("/db").exists() else Path("db")
     return base / filename
 
 

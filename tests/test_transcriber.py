@@ -1,6 +1,8 @@
 """transcriber.py 단위 테스트 — 경로 생성 로직만 검증 (Whisper 모델 로드 없음)."""
 
 import sys
+import threading
+import time
 from unittest.mock import MagicMock
 
 
@@ -72,4 +74,41 @@ def test_transcribe_without_language(tmp_path):
     mod.transcribe(audio, model_size="base", language="")
     mock_model.transcribe.assert_called_once_with(str(audio))
 
+    mod._model_cache.clear()
+
+
+def test_transcribe_concurrent_different_model_sizes_no_race(tmp_path):
+    """회귀 테스트: 서로 다른 model_size를 동시에 요청해도 _model_cache 경쟁으로 KeyError가 나면 안 된다."""
+    mock_module = _setup_mock_faster_whisper()
+
+    def make_model(size, device, compute_type):
+        time.sleep(0.05)  # 캐시 clear()/대입 사이 경쟁 창을 넓힘
+        model = MagicMock()
+        segment = MagicMock()
+        segment.text = f"{size} 텍스트"
+        model.transcribe.return_value = ([segment], None)
+        return model
+
+    mock_module.WhisperModel.side_effect = make_model
+
+    import src.stt.transcriber as mod
+
+    mod._model_cache.clear()
+    errors: list[Exception] = []
+
+    def worker(size: str) -> None:
+        try:
+            audio = tmp_path / f"lecture_{size}.mp3"
+            audio.write_bytes(b"fake")
+            mod.transcribe(audio, model_size=size)
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(size,)) for size in ("tiny", "base", "small")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
     mod._model_cache.clear()

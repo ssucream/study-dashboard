@@ -1,5 +1,7 @@
 """웹 다운로드 task route 테스트."""
 
+import asyncio
+
 import pytest
 from backend.api.routes import tasks as tasks_route
 from backend.api.state import PlaybackProgress, app_state
@@ -322,7 +324,13 @@ async def test_summarize_from_file_unpacks_new_path_layout(monkeypatch, tmp_path
     txt_path.parent.mkdir(parents=True, exist_ok=True)
     txt_path.write_text("강의 텍스트", encoding="utf-8")
 
-    monkeypatch.setattr("src.summarizer.summarizer.summarize", lambda *a, **kw: summary_path)
+    summarize_calls = {}
+
+    def fake_summarize(*args, **kwargs):
+        summarize_calls.update(kwargs)
+        return kwargs["output_path"]
+
+    monkeypatch.setattr("src.summarizer.summarizer.summarize", fake_summarize)
 
     response = await tasks_route.start_summarize_from_file(
         tasks_route.SummarizeFromFileRequest(
@@ -336,3 +344,91 @@ async def test_summarize_from_file_unpacks_new_path_layout(monkeypatch, tmp_path
 
     assert managed.status == "completed"
     assert managed.result["summary_path"] == str(summary_path)
+    # HIGH #4 회귀 방지: summarize()가 summarized/ 하위 경로를 output_path로 명시적으로 받아야 한다
+    assert summarize_calls["output_path"] == summary_path
+
+
+@pytest.mark.asyncio
+async def test_start_summarize_writes_to_summarized_dir(monkeypatch, tmp_path):
+    """회귀 테스트: task_id 기반 요약도 summarize()에 summarized/ 하위 output_path를 전달해야 한다."""
+    from src.downloader.pipeline import build_download_paths
+
+    course = _seed_course()
+    Config.AI_ENABLED = "true"
+    Config.GOOGLE_API_KEY = "api-key"
+    Config.GEMINI_MODEL = "gemini-2.5-flash"
+    monkeypatch.setattr(Config, "get_download_dir", staticmethod(lambda: str(tmp_path)))
+
+    _base, _mp4, _mp3, txt_path, summary_path = build_download_paths(
+        download_dir=str(tmp_path),
+        course_name=course.long_name,
+        week_label="1주차",
+        lecture_title="1강",
+    )
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    txt_path.write_text("강의 텍스트", encoding="utf-8")
+
+    async def fake_download_run(managed):
+        return {"stt": {"status": "completed", "txt_path": str(txt_path)}}
+
+    source_task = task_manager.create(
+        "download",
+        fake_download_run,
+        metadata={"course_name": course.long_name, "lecture_title": "1강", "week_label": "1주차"},
+    )
+    await source_task.task
+
+    summarize_calls = {}
+
+    def fake_summarize(*args, **kwargs):
+        summarize_calls.update(kwargs)
+        return kwargs["output_path"]
+
+    monkeypatch.setattr("src.summarizer.summarizer.summarize", fake_summarize)
+
+    response = await tasks_route.start_summarize(source_task.id)
+    managed = task_manager.get(response["task_id"])
+    await managed.task
+
+    assert managed.status == "completed"
+    assert summarize_calls["output_path"] == summary_path
+
+
+@pytest.mark.asyncio
+async def test_start_download_rejects_concurrent_download(monkeypatch):
+    """회귀 테스트: 다운로드가 진행 중일 때 두 번째 다운로드 요청은 거부돼야 한다 (공유 Playwright page 보호)."""
+    course = _seed_course()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_download_lecture_media(**kwargs):
+        started.set()
+        await release.wait()
+        return {"download_rule": kwargs["rule"], "download_dir": kwargs["download_dir"], "files": []}
+
+    monkeypatch.setattr("src.downloader.pipeline.download_lecture_media", fake_download_lecture_media)
+
+    response = await tasks_route.start_download(
+        tasks_route.DownloadTaskRequest(
+            course_id=course.id,
+            lecture_url="https://canvas.ssu.ac.kr/courses/42/items/1",
+            lecture_title="1강",
+            week_label="1주차",
+        )
+    )
+    await started.wait()
+
+    with pytest.raises(HTTPException) as exc:
+        await tasks_route.start_download(
+            tasks_route.DownloadTaskRequest(
+                course_id=course.id,
+                lecture_url="https://canvas.ssu.ac.kr/courses/42/items/1",
+                lecture_title="2강",
+                week_label="1주차",
+            )
+        )
+    assert exc.value.status_code == 409
+
+    release.set()
+    managed = task_manager.get(response["task_id"])
+    await managed.task

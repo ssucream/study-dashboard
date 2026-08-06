@@ -2,8 +2,9 @@
 
 from backend.api.state import app_state
 from backend.api.task_manager import ManagedTask, task_manager
+from backend.api.validators import validate_lecture_url
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from src import event_log
 from src.config import Config
@@ -70,6 +71,8 @@ class DownloadTaskRequest(BaseModel):
     lecture_title: str
     week_label: str = ""
 
+    _validate_lecture_url = field_validator("lecture_url")(validate_lecture_url)
+
 
 def _find_course(course_id: str):
     return next((course for course in app_state.courses if course.id == course_id), None)
@@ -84,6 +87,8 @@ async def start_download(req: DownloadTaskRequest):
         raise HTTPException(status_code=409, detail="재생 중에는 다운로드를 시작할 수 없습니다.")
     if app_state.auto.enabled:
         raise HTTPException(status_code=409, detail="자동 모드 실행 중에는 다운로드를 시작할 수 없습니다.")
+    if any(t.kind == "download" and t.status in {"queued", "running"} for t in task_manager.list()):
+        raise HTTPException(status_code=409, detail="다른 다운로드가 진행 중입니다. 완료 후 다시 시도하세요.")
 
     course = _find_course(req.course_id)
     if not course:
@@ -369,6 +374,18 @@ async def start_summarize(task_id: str):
     lecture_title = task.metadata.get("lecture_title", "")
     week_label = task.metadata.get("week_label", "")
 
+    from src.downloader.pipeline import build_download_paths
+
+    try:
+        _base, _mp4, _mp3, _txt, summary_out_path = build_download_paths(
+            download_dir=Config.get_download_dir(),
+            course_name=course_name,
+            week_label=week_label,
+            lecture_title=lecture_title,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     async def run(managed: ManagedTask):
 
         from backend.api.summary_store import encode_summary_id
@@ -388,6 +405,7 @@ async def start_summarize(task_id: str):
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
+                output_path=summary_out_path,
             ),
         )
         summary_id = encode_summary_id(summary_path)
@@ -452,7 +470,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
     from src.downloader.pipeline import build_download_paths
 
     try:
-        _base, mp4_path, mp3_path, txt_path, _summary = build_download_paths(
+        _base, mp4_path, mp3_path, txt_path, summary_out_path = build_download_paths(
             download_dir=Config.get_download_dir(),
             course_name=course.long_name,
             week_label=req.week_label,
@@ -507,6 +525,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
                     model_size=Config.WHISPER_MODEL or "base",
                     language=Config.STT_LANGUAGE or "",
                     on_model_loaded=_on_model_loaded,
+                    output_path=txt_path,
                 ),
             )
             event_log.record_event(
@@ -540,6 +559,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
+                output_path=summary_out_path,
             ),
         )
         summary_id = encode_summary_id(summary_path)

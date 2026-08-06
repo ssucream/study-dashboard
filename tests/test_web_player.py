@@ -3,6 +3,7 @@
 import pytest
 from backend.api.routes import player as player_route
 from backend.api.state import PlaybackProgress, app_state
+from fastapi import HTTPException
 
 from src import event_log
 from src.player.background_player import PlaybackState
@@ -240,3 +241,22 @@ async def test_start_play_preserves_playback_error(monkeypatch):
     assert events[0]["action"] == "play_failed"
     assert events[0]["error_message"] == "비디오 프레임을 찾지 못했습니다."
     assert events[0]["log_path"] == "/tmp/web_play.log"
+
+
+@pytest.mark.asyncio
+async def test_start_play_rejects_while_auto_mode_enabled():
+    """회귀 테스트: 자동 모드 실행 중에는 수동 재생을 시작할 수 없어야 한다 (공유 Playwright page 보호)."""
+    course, lecture = _seed_course()
+    app_state.auto.enabled = True
+
+    with pytest.raises(HTTPException) as exc:
+        await player_route.start_play(
+            player_route.PlayRequest(
+                course_id=course.id,
+                lecture_url=lecture.full_url,
+                lecture_title=lecture.title,
+                week_label=lecture.week_label,
+            )
+        )
+
+    assert exc.value.status_code == 409
