@@ -78,6 +78,8 @@ def _find_course(course_id: str):
 @router.post("/download")
 async def start_download(req: DownloadTaskRequest):
     _require_auth()
+    if Config.DOWNLOAD_ENABLED != "true":
+        raise HTTPException(status_code=409, detail="설정에서 영상 다운로드를 먼저 활성화하세요.")
     if app_state.is_playing:
         raise HTTPException(status_code=409, detail="재생 중에는 다운로드를 시작할 수 없습니다.")
     if app_state.auto.enabled:

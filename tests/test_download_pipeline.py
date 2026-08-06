@@ -18,13 +18,17 @@ async def test_download_pipeline_transcribes_mp3_and_deletes_audio(monkeypatch, 
         if on_progress:
             on_progress(10, 10)
 
-    def fake_convert_to_mp3(mp4_path: Path):
-        mp3_path = mp4_path.with_suffix(".mp3")
+    def fake_convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None):
+        mp3_path = mp3_path if mp3_path else mp4_path.with_suffix(".mp3")
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
         mp3_path.write_bytes(b"mp3")
         return mp3_path
 
-    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None):
-        txt_path = audio_path.with_suffix(".txt")
+    def fake_transcribe(
+        audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None, output_path=None
+    ):
+        txt_path = output_path if output_path else audio_path.with_suffix(".txt")
+        txt_path.parent.mkdir(parents=True, exist_ok=True)
         txt_path.write_text(f"{model_size}:{language}", encoding="utf-8")
         return txt_path
 
@@ -65,13 +69,17 @@ async def test_download_pipeline_summarizes_txt_and_deletes_source(monkeypatch, 
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save_path.write_bytes(b"mp4")
 
-    def fake_convert_to_mp3(mp4_path: Path):
-        mp3_path = mp4_path.with_suffix(".mp3")
+    def fake_convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None):
+        mp3_path = mp3_path if mp3_path else mp4_path.with_suffix(".mp3")
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
         mp3_path.write_bytes(b"mp3")
         return mp3_path
 
-    def fake_transcribe(audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None):
-        txt_path = audio_path.with_suffix(".txt")
+    def fake_transcribe(
+        audio_path: Path, model_size: str = "base", language: str = "", on_model_loaded=None, output_path=None
+    ):
+        txt_path = output_path if output_path else audio_path.with_suffix(".txt")
+        txt_path.parent.mkdir(parents=True, exist_ok=True)
         txt_path.write_text("강의 원문", encoding="utf-8")
         return txt_path
 
@@ -83,8 +91,10 @@ async def test_download_pipeline_summarizes_txt_and_deletes_source(monkeypatch, 
         extra_prompt: str = "",
         course_name: str = "",
         prompt_template: str = "",
+        output_path=None,
     ):
-        summary_path = txt_path.with_stem(txt_path.stem + "_summarized")
+        summary_path = output_path if output_path else txt_path.with_stem(txt_path.stem + "_summarized")
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(f"{agent}:{model}:{extra_prompt}:{course_name}:{prompt_template}", encoding="utf-8")
         return summary_path
 

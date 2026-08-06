@@ -16,8 +16,8 @@ def test_read_version():
 
 
 def test_default_download_dir():
-    """다운로드 기본 경로는 컨테이너 내부 /download로 고정한다."""
-    assert _default_download_dir() == "/download"
+    """다운로드 기본 경로는 컨테이너 내부 /downloads로 고정한다."""
+    assert _default_download_dir() == "/downloads"
 
 
 def test_normalize_download_rule():
@@ -90,7 +90,7 @@ def test_config_load_preserves_session_credentials(tmp_path):
 
 
 def test_config_ignores_saved_download_dir(tmp_path):
-    """DB에 과거 경로가 저장되어 있어도 다운로드 경로는 /download만 사용한다."""
+    """DB에 과거 경로가 저장되어 있어도 다운로드 경로는 /downloads만 사용한다."""
     import src.db as db
     from src.config import Config
 
@@ -98,8 +98,8 @@ def test_config_ignores_saved_download_dir(tmp_path):
         db.set("DOWNLOAD_DIR", "/tmp/old-download")
         Config.load()
 
-    assert Config.DOWNLOAD_DIR == "/download"
-    assert Config.get_download_dir() == "/download"
+    assert Config.DOWNLOAD_DIR == "/downloads"
+    assert Config.get_download_dir() == "/downloads"
 
 
 def test_config_loads_stt_delete_audio_option(tmp_path):
