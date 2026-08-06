@@ -2,6 +2,34 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.7.1] - 2026-08-06
+
+### CI 회귀 테스트 수정 · HIGH 보안·안정성 항목 10건 수정
+
+#### 수정 (CI 회귀 테스트 5건)
+
+- `test_config.py`: `/downloads` 경로 변경에 맞춰 stale 테스트 값 수정 (2건)
+- `test_download_pipeline.py`: `convert_to_mp3`/`transcribe`/`summarize`의 `output_path` 파라미터에 맞춰 fake 함수 시그니처 수정 (2건)
+- `tasks.py` `start_download`: `DOWNLOAD_ENABLED` 가드 누락 회귀 복구 — 프론트/auto 다운로드는 여전히 이 설정을 체크하는데 수동 다운로드만 검증이 빠져 있었음
+
+#### 수정 (보안·안정성 HIGH 10건)
+
+- **SSRF 방지**: `lecture_url`을 `canvas.ssu.ac.kr`만 허용하는 검증 추가 (`backend/api/validators.py`)
+- **요약 저장 경로 분산 수정**: `start_summarize`/`start_summarize_from_file`이 `summarize()`/`transcribe()`에 `output_path`를 명시 전달하도록 수정
+- **영상 다운로드가 이벤트 루프를 블로킹하던 문제 수정**: `_stream_download`를 `run_in_executor`로, `time.sleep`을 `asyncio.sleep`으로 전환
+- **Whisper 모델 캐시 레이스 컨디션 수정**: `_model_cache` 접근에 락 추가해 동시 STT 호출 시 KeyError·모델 이중 로딩 방지
+- **공유 Playwright page 보호 강화**: 동시 다운로드 가드(`tasks.py`), 수동 재생 시 auto 모드 가드(`player.py`), `refresh_courses` 재생 중 가드 + 락 + 실패 시 기존 상태 보존(`courses.py`)
+- **`get_data_path()` 경로 불일치 수정**: `/data` → `/db` — 마감 알림 중복전송 방지 상태가 컨테이너 재시작마다 소실되던 문제 해결
+- **`.secret_key` 생성 경쟁·복호화 실패 무음 처리 수정**: `O_CREAT|O_EXCL`로 원자적 생성, 복호화 실패(`InvalidToken`) 시 경고 로그 추가
+- **`/ws/status` 인증 체크 추가**: 미인증 연결은 `accept()` 전에 거부(close code 1008)
+
+#### 테스트
+
+- 회귀 테스트 22건 추가 (신규 파일 4개: `test_validators.py`, `test_video_downloader.py`, `test_web_courses.py`, `test_web_ws.py`)
+- 전체 104/104 통과
+
+---
+
 ## [v26.7.0] - 2026-08-06
 
 ### 버전 형식 변경 · 다운로드 파이프라인 재편 · 실시간 상태 스트리밍
