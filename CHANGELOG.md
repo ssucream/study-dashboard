@@ -2,6 +2,59 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.7.2] - 2026-08-07
+
+### 코드 리뷰 후속 조치 — 설정 배너 오탐, 보안·안정성 MEDIUM 10건, 프론트/백엔드 생명주기 8건, 코드 정리 LOW 7건
+
+2026-08-06 3-agent 전체 코드 리뷰에서 나온 CRITICAL·HIGH 항목은 v26.7.0/v26.7.1에서 처리했고,
+이번 릴리즈는 남은 MEDIUM·LOW 항목을 정리한 버그 수정·내부 정리 릴리즈다.
+
+#### 수정 (놓쳤던 HIGH 1건)
+
+- **설정 미비 배너 permanent false positive**: `GET /api/settings`가 보안상 API 키를 응답에서 제외하는데,
+  프론트는 그 값 존재 여부로 배너를 띄워 키가 있어도 항상 "미설정" 경고가 뜨던 문제 수정.
+  `HAS_GOOGLE_API_KEY`/`HAS_TELEGRAM_BOT_TOKEN` boolean 필드 추가 (`backend/api/routes/settings.py`, `frontend/js/app.js`)
+
+#### 수정 (보안·안정성 MEDIUM 10건)
+
+- **ffmpeg subprocess timeout 없음**: 손상된 mp4에서 무한 대기하던 문제 — 30분 타임아웃 + `TimeoutExpired` 처리 추가
+- **다운로드 파이프라인 부분 실패 시 파일 정보 유실**: mp4/mp3까지 받은 뒤 STT/요약에서 실패하면 이미 완료된 파일 정보가
+  통째로 버려지던 문제 — `PipelineStageError`로 부분 결과를 보존해 `task_manager`가 살려서 전달하도록 수정
+- **Gemini 빈 응답 시 TypeError**: 안전 필터 차단·`MAX_TOKENS` 시 `response.text`가 `None`이라 의미 없는 에러로 노출되던 문제 — 명확한 `RuntimeError`로 교체
+- **요약 프롬프트 템플릿 `str.format` KeyError 위험**: 사용자 편집 프롬프트에 `{text}` 외 중괄호가 섞이면 STT까지 끝낸 뒤 요약이 실패하던 문제 — `str.replace`로 교체
+- **로거 FileHandler 미종료로 fd 누적**: 재생/다운로드 실패마다 새 `FileHandler`를 열고 안 닫아 장시간 구동 시 fd 고갈 위험 — `close_error_logger()` 추가
+- **`Config.load()`가 매번 DB 스키마 재생성**: 연결마다 `_ensure_schema()`를 실행하던 것을 경로별 캐싱으로 최초 1회만 실행하도록 수정
+- **DB 경로가 CWD 의존**: 저장소 루트가 아닌 곳에서 로컬 서버를 띄우면 빈 DB가 새로 생기던 문제 — 절대경로로 고정
+- **학번 평문 로깅 불일치**: 로그인 성공 경로만 마스킹이 빠져 있던 것을 실패 경로와 동일하게 `mask_user_id()` 적용
+- **`esc()`가 따옴표 미이스케이프**: HTML attribute 컨텍스트에서 fragile하던 XSS 방어를 `&quot;`/`&#39;` 이스케이프 추가로 보강
+- **의존성 취약점**: `starlette` 1.0.0→1.4.1, `cryptography` 46.0.5→50.0.0 등 scoped 업그레이드 (major 버전이 걸리는
+  `fastapi`/`google-genai`/`rich`/`playwright`는 회귀 위험이 커서 이번 범위에서 제외)
+
+#### 수정 (프론트엔드 UX 4건 · 백엔드 생명주기 4건)
+
+- **검색창 타이핑 중 다운로드 진행 폴링 고아화**: 강의 목록 재렌더링 시 진행 중인 다운로드 row/버튼이 detach되던 문제 —
+  `state.activeDownloads`로 추적해 재렌더링 후에도 폴링을 다시 붙이도록 수정
+- **두 폴링 루프가 재생 메시지 로그 엘리먼트를 두고 경쟁**: 자동 다운로드 진행률 표시를 별도 엘리먼트(`#player-auto-download-log`)로 분리
+- **로그아웃 후 폴링이 안 멈추던 문제**: `showLogin()`이 `state.userId`를 비우도록 수정해 WS `onclose`의 재폴링 재시작을 차단
+- **요약 폴링 체인이 로그아웃 시 취소 안 되던 문제**: 재귀 `setTimeout`을 `state.downloadTaskTimers`에 등록해 일괄 취소 가능하도록 수정
+- **서버 종료 시 실행 중 task 미취소**: `docker compose down` 중 부분 상태로 방치되던 것을 lifespan 종료 시 일괄 취소하도록 수정
+- **로그아웃 시 scraper 정리 중 AttributeError**: 아직 실행 중인 task가 있으면 scraper 정리를 다음 로그인으로 미루도록 수정
+- **`stop_play`가 취소 완료 전에 재생 가능 상태로 복귀**: Playwright 정리가 끝나기 전에 재생 재시도가 가능하던 문제 — 중복 대입 제거로 실제 정리 완료를 유일한 신뢰 소스로 삼도록 수정
+- **다운로드 Config 매핑 3중 중복·드리프트**: `tasks.py`/`player.py`/`auto.py`에 흩어져 있던 Config→kwargs 매핑을 `run_download_from_config()` 헬퍼로 통합
+
+#### 정리 (코드 품질 LOW 7건)
+
+- 요약 파일 root 경로 계산 캐싱, 레거시 요약 경로 헬퍼 삭제, `_require_auth()` 8개 파일 복붙을 공용 dependency로 통합,
+  fragile DOM 참조 정리, 과도하게 넓은 예외 처리 축소, 스트리밍 다운로드 응답 미종료로 인한 소켓 누수 수정,
+  재생 취소 신호를 문자열 비교 대신 명시적 플래그로 교체
+
+#### 테스트
+
+- 회귀 테스트 20건 추가 (신규 파일 `test_db.py`, `test_logger.py`, `test_main_lifespan.py`)
+- 전체 117/117 통과, ruff lint 클린
+
+---
+
 ## [v26.7.1] - 2026-08-06
 
 ### CI 회귀 테스트 수정 · HIGH 보안·안정성 항목 10건 수정
