@@ -200,3 +200,40 @@ async def test_download_pipeline_preserves_files_when_stt_fails(monkeypatch, tmp
     assert any(f["type"] == "mp4" for f in partial["files"])
     assert any(f["type"] == "mp3" for f in partial["files"])
     assert all(f["type"] != "txt" for f in partial["files"])
+
+
+def test_download_info_for_lecture_treats_path_traversal_as_not_exists(monkeypatch, tmp_path):
+    """build_download_paths()의 경로 이탈 감지(ValueError)만 exists:False로 흡수해야 한다."""
+
+    def fake_build_download_paths(**kwargs):
+        raise ValueError("잘못된 다운로드 경로가 감지되었습니다.")
+
+    monkeypatch.setattr(pipeline, "build_download_paths", fake_build_download_paths)
+
+    result = pipeline.download_info_for_lecture(
+        download_dir=str(tmp_path),
+        course_name="테스트",
+        week_label="1주차",
+        lecture_title="1강",
+        rule="mp4",
+    )
+
+    assert result == {"exists": False}
+
+
+def test_download_info_for_lecture_does_not_swallow_unexpected_errors(monkeypatch, tmp_path):
+    """ValueError가 아닌 예외(버그)는 삼키지 않고 그대로 전파해야 디버깅이 가능하다."""
+
+    def fake_build_download_paths(**kwargs):
+        raise TypeError("예상치 못한 버그")
+
+    monkeypatch.setattr(pipeline, "build_download_paths", fake_build_download_paths)
+
+    with pytest.raises(TypeError, match="예상치 못한 버그"):
+        pipeline.download_info_for_lecture(
+            download_dir=str(tmp_path),
+            course_name="테스트",
+            week_label="1주차",
+            lecture_title="1강",
+            rule="mp4",
+        )

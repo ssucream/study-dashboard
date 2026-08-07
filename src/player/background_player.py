@@ -40,6 +40,7 @@ class PlaybackState:
     duration: float = 0.0  # 전체 길이 (초)
     ended: bool = False
     error: str | None = None
+    cancelled: bool = False  # 사용자 중단(CancelledError) 여부 — error 문자열 비교 대신 이 플래그로 판별할 것
 
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────────
@@ -1118,6 +1119,7 @@ async def play_lecture(
         )
     except asyncio.CancelledError:
         state.error = "사용자 중단"
+        state.cancelled = True
         return state
     finally:
         await _cleanup()

@@ -2,21 +2,17 @@
 
 import asyncio
 
+from backend.api.auth_dep import require_auth
 from backend.api.state import app_state
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
 
-def _require_auth() -> None:
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-
-
 @router.post("/check")
 async def check_deadlines():
     """미완료 과제·퀴즈 중 마감 임박 항목을 조회하고, 텔레그램이 설정된 경우 알림을 전송한다."""
-    _require_auth()
+    require_auth()
 
     if not app_state.courses or not app_state.details:
         raise HTTPException(

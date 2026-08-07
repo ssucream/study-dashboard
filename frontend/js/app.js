@@ -182,7 +182,7 @@ function _applyPlayerStatus(s) {
     $('#player-course-name').textContent = s.course_name || '';
     $('#player-lecture-title').textContent = s.lecture_title || '';
     $('#player-week').textContent = s.week_label || '';
-    $('#player-pct').childNodes[0].textContent = Math.round(s.progress_pct);
+    $('#player-pct-value').textContent = Math.round(s.progress_pct);
     $('#player-time').textContent = `${fmtTime(s.current)} / ${fmtTime(s.duration)}`;
     $('#player-bar').style.width = `${s.progress_pct}%`;
   } else {

@@ -1,3 +1,4 @@
+from backend.api.auth_dep import require_auth
 from backend.api.state import app_state
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -12,14 +13,9 @@ router = APIRouter()
 _SENSITIVE = {"GOOGLE_API_KEY", "TELEGRAM_BOT_TOKEN"}
 
 
-def _require_auth() -> None:
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-
-
 @router.get("")
 async def get_settings():
-    _require_auth()
+    require_auth()
     return {
         "DOWNLOAD_ENABLED": Config.DOWNLOAD_ENABLED,
         "DOWNLOAD_DIR": Config.get_download_dir(),
@@ -67,7 +63,7 @@ class SettingsUpdate(BaseModel):
 
 @router.post("/telegram/test")
 async def test_telegram():
-    _require_auth()
+    require_auth()
     import asyncio
 
     from src.notifier.telegram_notifier import verify_bot
@@ -86,7 +82,7 @@ async def test_telegram():
 
 @router.put("")
 async def update_settings(body: SettingsUpdate):
-    _require_auth()
+    require_auth()
     to_save = {}
     for key, val in body.model_dump(exclude_none=True).items():
         if key == "DOWNLOAD_RULE":

@@ -4,6 +4,7 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta
 
+from backend.api.auth_dep import require_auth
 from backend.api.state import PlaybackProgress, app_state
 from backend.api.task_manager import ManagedTask, task_manager
 from fastapi import APIRouter, HTTPException
@@ -23,11 +24,6 @@ except Exception:
 
 class AutoStartRequest(BaseModel):
     schedule_hours: list[int] = _DEFAULT_SCHEDULE_HOURS
-
-
-def _require_auth() -> None:
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
 
 
 def _next_schedule_time(schedule_hours: list[int]) -> datetime:
@@ -259,7 +255,7 @@ async def _run_auto_cycle() -> None:
             )
             _on_progress(final_state)
 
-            if final_state.error == "사용자 중단":
+            if final_state.cancelled:
                 app_state.playback.status = "stopped"
                 app_state.auto.enabled = False
                 break
@@ -339,7 +335,7 @@ async def _auto_loop() -> None:
 
 @router.get("/status")
 async def auto_status():
-    _require_auth()
+    require_auth()
     a = app_state.auto
     return {
         "enabled": a.enabled,
@@ -356,7 +352,7 @@ async def auto_status():
 
 @router.post("/start")
 async def auto_start(req: AutoStartRequest):
-    _require_auth()
+    require_auth()
 
     hours = sorted(set(req.schedule_hours))
     if not hours or any(h < 0 or h > 23 for h in hours):
@@ -406,7 +402,7 @@ class AutoScheduleUpdate(BaseModel):
 
 @router.put("/schedule")
 async def update_schedule(req: AutoScheduleUpdate):
-    _require_auth()
+    require_auth()
     hours = sorted(set(req.schedule_hours))
     if not hours or any(h < 0 or h > 23 for h in hours):
         raise HTTPException(status_code=422, detail="스케줄 시간은 0~23 사이 값이어야 합니다.")
@@ -418,7 +414,7 @@ async def update_schedule(req: AutoScheduleUpdate):
 
 @router.post("/stop")
 async def auto_stop():
-    _require_auth()
+    require_auth()
     app_state.auto.enabled = False
     if app_state.auto.task_id:
         await task_manager.cancel(app_state.auto.task_id)

@@ -177,7 +177,7 @@ async def run_player(page, lec: LectureItem, debug: bool = False) -> tuple[bool,
     console.print()
 
     if final_state.error:
-        if final_state.error == "사용자 중단":
+        if final_state.cancelled:
             console.print("  [yellow]재생이 중단되었습니다.[/yellow]")
             return False, False, True
         console.print(f"  [bold red]재생 오류:[/bold red] {final_state.error}")

@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+from backend.api.auth_dep import require_auth
 from backend.api.state import PlaybackProgress, app_state
 from backend.api.task_manager import ManagedTask, task_manager
 from backend.api.validators import validate_lecture_url
@@ -19,11 +20,6 @@ class PlayRequest(BaseModel):
     week_label: str = ""
 
     _validate_lecture_url = field_validator("lecture_url")(validate_lecture_url)
-
-
-def _require_auth() -> None:
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
 
 
 def _sync_progress(state) -> None:
@@ -145,7 +141,7 @@ def _schedule_auto_download(req: PlayRequest, course, play_task_id: str) -> None
 
 @router.post("/play")
 async def start_play(req: PlayRequest):
-    _require_auth()
+    require_auth()
     if app_state.is_playing:
         raise HTTPException(status_code=409, detail="이미 재생 중입니다.")
     if app_state.auto.enabled:
@@ -184,7 +180,7 @@ async def start_play(req: PlayRequest):
             )
             _sync_progress(final_state)
 
-            if final_state.error == "사용자 중단":
+            if final_state.cancelled:
                 app_state.playback.status = "stopped"
                 app_state.playback.error = None
                 managed.update(status="cancelled", stage="stopped", message="재생이 중지되었습니다.")
@@ -351,7 +347,7 @@ async def start_play(req: PlayRequest):
 
 @router.post("/stop")
 async def stop_play():
-    _require_auth()
+    require_auth()
     task_id = app_state.play_task_id
     if app_state.play_task_id:
         await task_manager.cancel(app_state.play_task_id)

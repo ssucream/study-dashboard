@@ -54,18 +54,26 @@ CRITICAL 1건과 HIGH 10건은 처리 완료(`v26.7.0`, `v26.7.1`). 아래는 �
 
 ---
 
-## LOW (급하지 않음)
+## LOW (2026-08-07 처리, 7건 — 8번째 "파일 분리"는 review에서도 "지금은 아님"이라 보류)
 
-- `backend/api/routes/courses.py:186-196` — `_summary_roots()`가 매 호출마다 `expanduser().resolve()` 재계산,
-  `lru_cache` 하나로 해결.
-- `backend/api/routes/courses.py:21` — `_summaries_dir()`가 `summary_store.summaries_dir()`와 로직 중복. 삭제하고 import로 대체.
-- `_require_auth()`가 8개 라우트 파일에 복붙됨 — FastAPI dependency 하나로 추출 가능.
-- `frontend/js/app.js:184` — `$('#player-pct').childNodes[0].textContent`가 첫 child가 텍스트 노드라는 가정에 의존, fragile.
-- `src/downloader/pipeline.py:72` — `except (ValueError, Exception)`이 모든 예외를 `{"exists": False}`로 은폐, 디버깅 불가.
-- `src/downloader/video_downloader.py:317` — `iter_content` 중 예외 시 `requests` 응답 미종료, 소켓 누수.
-- `src/player/background_player.py:1119-1121` — `CancelledError`를 삼키고 문자열 비교(`"사용자 중단"`)로 취소를 전파, 문구 바뀌면 조용히 깨짐.
-- `tasks.py`(600줄+)/`app.js`(1250줄+) — 지금 쪼갤 정도는 아니지만 더 커지면 분리 검토
-  (`app.js`는 course-detail 렌더링 + task 폴링 구간, 약 500줄이 분리 후보).
+- `_summary_roots()` 매 호출 재계산 → `backend/api/summary_store.py`에 입력값(경로 문자열) 기준
+  `@lru_cache`(`_resolved_roots`) 추가. summaries_dir()/download_dir 자체는 매번 새로 읽되
+  `expanduser().resolve()` 결과만 캐시 — 테스트가 `summaries_dir()`를 tmp_path로 monkeypatch해도
+  이전 캐시가 새 경로를 가리지 않음.
+- `courses.py`의 `_summaries_dir()`(레거시 `/data/summaries` 경로, 이미 폐기된 경로 규칙)를 삭제하고
+  `summary_store.summaries_dir()`(`/db/summaries`, 올바른 마운트 경로) import로 대체.
+- `_require_auth()` 8개 라우트 파일 복붙 → `backend/api/auth_dep.py`에 `require_auth()`로 통합,
+  전 라우트에서 import해서 사용.
+- `frontend/js/app.js`의 `$('#player-pct').childNodes[0].textContent` → `index.html`에 전용
+  `#player-pct-value` span 추가하고 그걸 직접 타겟.
+- `src/downloader/pipeline.py`의 `except (ValueError, Exception)` → `except ValueError`로 좁혀
+  실제 발생 가능한 예외(경로 이탈)만 흡수, 그 외 버그는 그대로 전파.
+- `src/downloader/video_downloader.py`의 `_stream_download()` → `requests.get(...)`를 `with`로 감싸
+  `iter_content` 중 예외가 나도 응답을 확실히 close.
+- `src/player/background_player.py`의 `PlaybackState`에 `cancelled: bool` 필드 추가,
+  `error == "사용자 중단"` 문자열 비교 3곳(`ui/player.py`, `backend/api/routes/{player,auto}.py`)을
+  이 필드 체크로 교체.
+- 회귀 테스트 3건 추가(`test_download_pipeline.py`/`test_video_downloader.py`), 전체 117개 통과, ruff 클린.
 
 ## 확인 필요 (낮은 확신도)
 

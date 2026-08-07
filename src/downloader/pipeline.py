@@ -78,7 +78,7 @@ def download_info_for_lecture(
             week_label=week_label,
             lecture_title=lecture_title,
         )
-    except (ValueError, Exception):
+    except ValueError:
         return {"exists": False}
 
     has_mp4 = mp4_path.is_file()

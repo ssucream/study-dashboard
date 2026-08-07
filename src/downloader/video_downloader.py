@@ -322,30 +322,29 @@ def _stream_download(
         if existing_size > 0:
             headers["Range"] = f"bytes={existing_size}-"
 
-    response = requests.get(url, stream=True, timeout=_TIMEOUT, cookies=cookies, headers=headers)
+    with requests.get(url, stream=True, timeout=_TIMEOUT, cookies=cookies, headers=headers) as response:
+        if response.status_code == 206:
+            # 서버가 Range 지원 → 이어받기
+            mode = "ab"
+            total = existing_size + int(response.headers.get("content-length", 0))
+            downloaded = existing_size
+        elif response.status_code == 200:
+            # 서버가 Range 미지원 또는 첫 시도 → 처음부터
+            response.raise_for_status()
+            mode = "wb"
+            total = int(response.headers.get("content-length", 0))
+            downloaded = 0
+        else:
+            response.raise_for_status()
+            return
 
-    if response.status_code == 206:
-        # 서버가 Range 지원 → 이어받기
-        mode = "ab"
-        total = existing_size + int(response.headers.get("content-length", 0))
-        downloaded = existing_size
-    elif response.status_code == 200:
-        # 서버가 Range 미지원 또는 첫 시도 → 처음부터
-        response.raise_for_status()
-        mode = "wb"
-        total = int(response.headers.get("content-length", 0))
-        downloaded = 0
-    else:
-        response.raise_for_status()
-        return
-
-    with open(save_path, mode) as f:
-        for chunk in response.iter_content(chunk_size=_CHUNK_SIZE):
-            if chunk:
-                f.write(chunk)
-                downloaded += len(chunk)
-                if on_progress and total > 0:
-                    on_progress(downloaded, total)
+        with open(save_path, mode) as f:
+            for chunk in response.iter_content(chunk_size=_CHUNK_SIZE):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if on_progress and total > 0:
+                        on_progress(downloaded, total)
 
 
 def _remove_partial(path: Path):

@@ -2,6 +2,7 @@
 
 import base64
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +24,14 @@ def _safe_term(term: str) -> str:
     return value or "unknown-term"
 
 
-def _summary_roots() -> list[Path]:
-    """요약 파일 접근을 허용할 root 목록.
+@lru_cache(maxsize=8)
+def _resolved_roots(summaries_root: str, download_dir: str) -> tuple[Path, ...]:
+    """summaries_dir()/download_dir 문자열 조합별로 expanduser().resolve() 결과를 캐시한다.
 
-    새 요약 대시보드 저장소(data/summaries)와 기존 CLI 요약 위치(DOWNLOAD_DIR)를
-    함께 허용해, 웹 요약 저장 포맷 도입 전 생성된 `_summarized.txt`도 볼 수 있게 한다.
+    입력 조합을 키로 쓰기 때문에 테스트에서 summaries_dir()를 tmp_path로 monkeypatch해도
+    이전 테스트의 캐시가 새 경로를 가리는 문제가 없다.
     """
-    roots = [summaries_dir()]
-    download_dir = Config.get_download_dir()
+    roots = [Path(summaries_root)]
     if download_dir:
         roots.append(Path(download_dir))
 
@@ -41,7 +42,16 @@ def _summary_roots() -> list[Path]:
         if resolved not in seen:
             seen.add(resolved)
             unique_roots.append(resolved)
-    return unique_roots
+    return tuple(unique_roots)
+
+
+def _summary_roots() -> list[Path]:
+    """요약 파일 접근을 허용할 root 목록.
+
+    새 요약 대시보드 저장소(data/summaries)와 기존 CLI 요약 위치(DOWNLOAD_DIR)를
+    함께 허용해, 웹 요약 저장 포맷 도입 전 생성된 `_summarized.txt`도 볼 수 있게 한다.
+    """
+    return list(_resolved_roots(str(summaries_dir()), Config.get_download_dir()))
 
 
 def _canonical_summary_path(term: str, course_name: str, week_label: str, lecture_title: str) -> Path:

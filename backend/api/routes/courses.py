@@ -1,9 +1,9 @@
 import asyncio
 from collections import Counter
-from pathlib import Path
 
+from backend.api.auth_dep import require_auth
 from backend.api.state import app_state
-from backend.api.summary_store import summary_for_lecture
+from backend.api.summary_store import summaries_dir, summary_for_lecture
 from fastapi import APIRouter, HTTPException
 
 from src.config import Config
@@ -13,22 +13,9 @@ router = APIRouter()
 _courses_load_lock = asyncio.Lock()
 
 
-def _require_auth():
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-
-
-def _summaries_dir() -> Path:
-    """요약 저장 디렉터리 — Docker /data 우선, 없으면 로컬 data/ 사용."""
-    for candidate in (Path("/data/summaries"), Path("data/summaries")):
-        if candidate.parent.exists():
-            return candidate
-    return Path("data/summaries")
-
-
 @router.get("")
 async def get_courses():
-    _require_auth()
+    require_auth()
 
     async with _courses_load_lock:
         if not app_state.courses:
@@ -62,7 +49,7 @@ async def get_courses():
 
 @router.get("/stats")
 async def get_stats():
-    _require_auth()
+    require_auth()
 
     if not app_state.details:
         async with _courses_load_lock:
@@ -94,7 +81,7 @@ async def get_stats():
 
 @router.get("/terms")
 async def get_terms():
-    _require_auth()
+    require_auth()
 
     # 과목 목록에서 가장 많이 등장하는 term = 현재 학기
     current_term = ""
@@ -104,7 +91,7 @@ async def get_terms():
             current_term = Counter(terms).most_common(1)[0][0]
 
     # 요약 마크다운이 저장된 과거 학기 스캔 (현재 학기 제외)
-    sdir = _summaries_dir()
+    sdir = summaries_dir()
     past_terms: list[str] = []
     if sdir.exists():
         past_terms = sorted(
@@ -117,7 +104,7 @@ async def get_terms():
 
 @router.post("/refresh")
 async def refresh_courses():
-    _require_auth()
+    require_auth()
     if app_state.is_playing:
         raise HTTPException(status_code=409, detail="재생 중에는 새로고침할 수 없습니다.")
     if app_state.auto.enabled:
@@ -140,7 +127,7 @@ async def refresh_courses():
 @router.get("/pending-items")
 async def get_pending_items():
     """미제출 과제·퀴즈 항목 목록을 반환한다."""
-    _require_auth()
+    require_auth()
     if not app_state.details:
         raise HTTPException(status_code=409, detail="강의 목록이 로드되지 않았습니다. 과목 목록을 먼저 불러오세요.")
 
@@ -173,7 +160,7 @@ async def get_pending_items():
 
 @router.get("/{course_id}")
 async def get_course_detail(course_id: str):
-    _require_auth()
+    require_auth()
 
     idx = next((i for i, c in enumerate(app_state.courses) if c.id == course_id), None)
     if idx is None:

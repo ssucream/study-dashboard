@@ -1,5 +1,6 @@
 """공통 백그라운드 태스크 상태 API."""
 
+from backend.api.auth_dep import require_auth
 from backend.api.state import app_state
 from backend.api.task_manager import ManagedTask, task_manager
 from backend.api.validators import validate_lecture_url
@@ -60,11 +61,6 @@ async def _notify_summary_complete(
         )
 
 
-def _require_auth() -> None:
-    if not app_state.scraper:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-
-
 class DownloadTaskRequest(BaseModel):
     course_id: str
     lecture_url: str
@@ -80,7 +76,7 @@ def _find_course(course_id: str):
 
 @router.post("/download")
 async def start_download(req: DownloadTaskRequest):
-    _require_auth()
+    require_auth()
     if Config.DOWNLOAD_ENABLED != "true":
         raise HTTPException(status_code=409, detail="설정에서 영상 다운로드를 먼저 활성화하세요.")
     if app_state.is_playing:
@@ -272,13 +268,13 @@ async def start_download(req: DownloadTaskRequest):
 
 @router.get("")
 async def list_tasks():
-    _require_auth()
+    require_auth()
     return {"tasks": [task.to_dict() for task in task_manager.list()]}
 
 
 @router.get("/{task_id}")
 async def get_task(task_id: str):
-    _require_auth()
+    require_auth()
     task = task_manager.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
@@ -287,7 +283,7 @@ async def get_task(task_id: str):
 
 @router.get("/{task_id}/stt")
 async def get_stt_text(task_id: str):
-    _require_auth()
+    require_auth()
     from pathlib import Path
 
     task = task_manager.get(task_id)
@@ -319,7 +315,7 @@ async def download_stt_file(task_id: str):
 
     from fastapi.responses import FileResponse
 
-    _require_auth()
+    require_auth()
     task = task_manager.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
@@ -335,7 +331,7 @@ async def download_stt_file(task_id: str):
 
 @router.post("/{task_id}/summarize")
 async def start_summarize(task_id: str):
-    _require_auth()
+    require_auth()
     import asyncio
     from functools import partial
     from pathlib import Path
@@ -441,7 +437,7 @@ class SummarizeFromFileRequest(BaseModel):
 
 @router.post("/summarize-from-file")
 async def start_summarize_from_file(req: SummarizeFromFileRequest):
-    _require_auth()
+    require_auth()
     import asyncio
     from functools import partial
     from pathlib import Path
@@ -591,7 +587,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
 
 @router.post("/{task_id}/cancel")
 async def cancel_task(task_id: str):
-    _require_auth()
+    require_auth()
     task_before = task_manager.get(task_id)
     cancelled = await task_manager.cancel(task_id)
     if not cancelled:
