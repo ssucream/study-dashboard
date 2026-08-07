@@ -16,6 +16,16 @@ v26.7.2 배포 인프라 개편 시 `docker-compose.yml`의 backend 커맨드를
 
 - `docker-compose.yml`: backend 커맨드에서 `--workers 4` 제거, 단일 프로세스로 고정
   (재발 방지를 위해 절대 워커를 늘리면 안 된다는 주석 추가)
+- **`.secret_key` 동시 생성 시 레이스로 빈 키를 읽는 문제**: `os.open(O_CREAT|O_EXCL)`로 파일을
+  원자적으로 생성해도 뒤이은 `os.write()`는 별도 단계라, 경쟁에서 진 스레드/프로세스가
+  `FileExistsError`를 잡고 곧바로 읽으면 아직 쓰기가 끝나지 않은 빈 파일을 읽을 수 있었음
+  (CI에서 `test_concurrent_key_creation_is_consistent` 8-스레드 테스트로 재현·발견).
+  쓰기가 끝날 때까지 짧게 재시도하도록 수정 (`src/crypto.py`)
+
+#### 테스트
+
+- `test_crypto.py::test_concurrent_key_creation_is_consistent` 10회 연속 통과로 레이스 해소 확인
+- 전체 122/122 통과
 
 ---
 

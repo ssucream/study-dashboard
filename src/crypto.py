@@ -9,6 +9,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -60,7 +61,14 @@ def _load_or_create_key() -> bytes:
         finally:
             os.close(fd)
     except FileExistsError:
-        # 동시에 다른 프로세스/스레드가 먼저 키를 생성함 — 그 키를 사용해야 기존 암호화 값과 정합성이 맞음
+        # 동시에 다른 프로세스/스레드가 먼저 키를 생성함 — 그 키를 사용해야 기존 암호화 값과 정합성이 맞음.
+        # os.open(O_CREAT)와 os.write는 원자적이지 않아서, 파일이 생성된 직후·쓰기가 끝나기 전에
+        # 읽으면 빈 바이트가 보일 수 있다. 쓰기가 끝날 때까지 짧게 재시도한다.
+        for _ in range(50):
+            data = key_file.read_bytes().strip()
+            if data:
+                return data
+            time.sleep(0.01)
         return key_file.read_bytes().strip()
     return key
 
