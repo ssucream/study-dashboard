@@ -161,5 +161,7 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
         finish_reason = None
         if response.candidates:
             finish_reason = response.candidates[0].finish_reason
-        raise RuntimeError(f"Gemini 응답이 비어 있습니다 (finish_reason={finish_reason}). 안전 필터 차단이나 토큰 제한일 수 있습니다.")
+        raise RuntimeError(
+            f"Gemini 응답이 비어 있습니다 (finish_reason={finish_reason}). 안전 필터 차단이나 토큰 제한일 수 있습니다."
+        )
     return response.text
