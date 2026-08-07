@@ -14,8 +14,9 @@ dependencies = [
     "requests>=2.32.0",
     # STT — faster-whisper (CTranslate2 기반, torch 불필요)
     "faster-whisper>=1.1.0",
-    # AI 요약
+    # AI 요약 (Gemini / OpenAI / OpenRouter — OpenRouter는 openai SDK를 base_url만 바꿔 재사용)
     "google-genai>=1.0.0",
+    "openai>=1.0.0",
     "cryptography>=46.0.5",
     # CVE-2025-68146, CVE-2026-22701 대응 — 3.20.0 취약 버전 제외
     "filelock>=3.25.0",

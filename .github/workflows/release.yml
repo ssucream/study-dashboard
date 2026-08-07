@@ -103,10 +103,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: study-dashboard ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           overwrite_files: true
           body: |
-            # study-dashboard ${{ github.ref_name }}
+            # ${{ github.ref_name }}
 
             숭실대학교 Canvas Learning X 강의를 백그라운드로 재생(출석 처리)하거나
             다운로드/변환/AI 요약할 수 있는 웹 대시보드.

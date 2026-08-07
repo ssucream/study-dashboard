@@ -10,7 +10,7 @@ from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT
 
 router = APIRouter()
 
-_SENSITIVE = {"GOOGLE_API_KEY", "TELEGRAM_BOT_TOKEN"}
+_SENSITIVE = {"GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"}
 
 
 @router.get("")
@@ -29,6 +29,10 @@ async def get_settings():
         "AI_AGENT": Config.AI_AGENT,
         "GEMINI_MODEL": Config.GEMINI_MODEL,
         "HAS_GOOGLE_API_KEY": bool(Config.GOOGLE_API_KEY),
+        "OPENAI_MODEL": Config.OPENAI_MODEL,
+        "HAS_OPENAI_API_KEY": bool(Config.OPENAI_API_KEY),
+        "OPENROUTER_MODEL": Config.OPENROUTER_MODEL,
+        "HAS_OPENROUTER_API_KEY": bool(Config.OPENROUTER_API_KEY),
         "SUMMARY_PROMPT_TEMPLATE": Config.get_summary_prompt_template(),
         "SUMMARY_PROMPT_DEFAULT": DEFAULT_SUMMARY_PROMPT,
         "SUMMARY_PROMPT_EXTRA": Config.SUMMARY_PROMPT_EXTRA,
@@ -52,6 +56,10 @@ class SettingsUpdate(BaseModel):
     AI_AGENT: str | None = None
     GEMINI_MODEL: str | None = None
     GOOGLE_API_KEY: str | None = None
+    OPENAI_MODEL: str | None = None
+    OPENAI_API_KEY: str | None = None
+    OPENROUTER_MODEL: str | None = None
+    OPENROUTER_API_KEY: str | None = None
     SUMMARY_PROMPT_TEMPLATE: str | None = None
     SUMMARY_PROMPT_EXTRA: str | None = None
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: str | None = None
@@ -94,8 +102,8 @@ async def update_settings(body: SettingsUpdate):
     stt_supported = download_enabled and download_rule in {"mp3", "both"}
     stt_enabled = to_save.get("STT_ENABLED", Config.STT_ENABLED) == "true"
     ai_enabled = to_save.get("AI_ENABLED", Config.AI_ENABLED) == "true"
-    has_gemini_key = bool(to_save.get("GOOGLE_API_KEY") or Config.GOOGLE_API_KEY)
-    has_gemini_model = bool(to_save.get("GEMINI_MODEL") or Config.GEMINI_MODEL)
+    ai_agent = to_save.get("AI_AGENT", Config.AI_AGENT) or "gemini"
+    has_ai_credentials = Config.has_ai_credentials(ai_agent, pending=to_save)
     if not download_enabled:
         to_save["AUTO_DOWNLOAD_AFTER_PLAY"] = "false"
         to_save["STT_ENABLED"] = "false"
@@ -111,7 +119,7 @@ async def update_settings(body: SettingsUpdate):
         to_save["STT_DELETE_AUDIO_AFTER_TRANSCRIBE"] = "false"
         to_save["AI_ENABLED"] = "false"
         to_save["SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE"] = "false"
-    elif not ai_enabled or not (has_gemini_key and has_gemini_model):
+    elif not ai_enabled or not has_ai_credentials:
         to_save["AI_ENABLED"] = "false"
         to_save["SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE"] = "false"
 

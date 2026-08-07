@@ -10,6 +10,16 @@ function autoResizeTextarea(el) {
   el.style.height = el.scrollHeight + 'px';
 }
 
+const AI_MODEL_DEFAULTS = { GEMINI_MODEL: 'gemini-2.5-flash', OPENAI_MODEL: 'gpt-4o-mini', OPENROUTER_MODEL: 'openai/gpt-4o-mini' };
+
+function applyAiAgentVisibility(form = $('#settings-form')) {
+  if (!form) return;
+  const agent = form.elements.AI_AGENT?.value || state.settings.AI_AGENT || 'gemini';
+  $$('[data-agent-group]', form).forEach(el => {
+    el.classList.toggle('hidden', el.dataset.agentGroup !== agent);
+  });
+}
+
 export function applySettingsVisibility(form = $('#settings-form')) {
   if (!form) return;
   const downloadEnabled = form.elements.DOWNLOAD_ENABLED?.checked ?? state.settings.DOWNLOAD_ENABLED === 'true';
@@ -54,6 +64,7 @@ export function applySettingsVisibility(form = $('#settings-form')) {
     if (!aiEnabled) form.elements.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE.checked = false;
   }
   if (summaryDeleteTextRow) summaryDeleteTextRow.classList.toggle('opacity-50', !aiEnabled);
+  applyAiAgentVisibility(form);
 }
 
 export async function loadAppSettings() {
@@ -80,8 +91,10 @@ export async function loadSettings() {
         el.value = val || '';
       }
     });
-    const modelSelect = form.elements['GEMINI_MODEL'];
-    if (modelSelect && !modelSelect.value) modelSelect.value = 'gemini-2.5-flash';
+    Object.entries(AI_MODEL_DEFAULTS).forEach(([name, def]) => {
+      const el = form.elements[name];
+      if (el && !el.value) el.value = def;
+    });
     const prompt = $('#summary-prompt-template');
     if (prompt) {
       prompt.value = s.SUMMARY_PROMPT_TEMPLATE || s.SUMMARY_PROMPT_DEFAULT || '';
@@ -139,7 +152,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
   }
 });
 
-['DOWNLOAD_ENABLED', 'DOWNLOAD_RULE', 'AUTO_DOWNLOAD_AFTER_PLAY', 'STT_ENABLED', 'AI_ENABLED'].forEach(name => {
+['DOWNLOAD_ENABLED', 'DOWNLOAD_RULE', 'AUTO_DOWNLOAD_AFTER_PLAY', 'STT_ENABLED', 'AI_ENABLED', 'AI_AGENT'].forEach(name => {
   const el = $('#settings-form').elements[name];
   if (el) el.addEventListener('change', () => applySettingsVisibility());
 });

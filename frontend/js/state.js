@@ -24,6 +24,8 @@ export const state = {
     AI_ENABLED: 'false',
     AI_AGENT: 'gemini',
     GEMINI_MODEL: '',
+    OPENAI_MODEL: '',
+    OPENROUTER_MODEL: '',
     SUMMARY_PROMPT_TEMPLATE: '',
     SUMMARY_PROMPT_DEFAULT: '',
     SUMMARY_PROMPT_EXTRA: '',

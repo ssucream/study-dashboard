@@ -585,6 +585,15 @@
                 </label>
               </div>
               <div class="flex flex-col gap-2">
+                <label class="text-xs text-slate-400">AI 모델</label>
+                <select name="AI_AGENT" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:border-indigo-500 transition-colors">
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </div>
+
+              <div class="flex flex-col gap-2" data-agent-group="gemini">
                 <label class="text-xs text-slate-400">Gemini 모델</label>
                 <select name="GEMINI_MODEL" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:border-indigo-500 transition-colors">
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash (무료 티어 지원, 권장)</option>
@@ -593,9 +602,41 @@
                   <option value="gemini-1.5-pro">Gemini 1.5 Pro (유료)</option>
                 </select>
               </div>
-              <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-2" data-agent-group="gemini">
                 <label class="text-xs text-slate-400">Google API Key</label>
                 <input type="password" name="GOOGLE_API_KEY" placeholder="저장된 경우 변경 시에만 입력"
+                  class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+
+              <div class="flex flex-col gap-2" data-agent-group="openai">
+                <label class="text-xs text-slate-400">OpenAI 모델</label>
+                <select name="OPENAI_MODEL" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:border-indigo-500 transition-colors">
+                  <option value="gpt-4o-mini">GPT-4o mini (저렴, 권장)</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 mini</option>
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="o3-mini">o3-mini (추론 특화)</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-2" data-agent-group="openai">
+                <label class="text-xs text-slate-400">OpenAI API Key</label>
+                <input type="password" name="OPENAI_API_KEY" placeholder="저장된 경우 변경 시에만 입력"
+                  class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+
+              <div class="flex flex-col gap-2" data-agent-group="openrouter">
+                <label class="text-xs text-slate-400">OpenRouter 모델</label>
+                <select name="OPENROUTER_MODEL" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:border-indigo-500 transition-colors">
+                  <option value="openai/gpt-4o-mini">OpenAI GPT-4o mini (권장)</option>
+                  <option value="anthropic/claude-3.5-sonnet">Anthropic Claude 3.5 Sonnet</option>
+                  <option value="google/gemini-2.0-flash-001">Google Gemini 2.0 Flash</option>
+                  <option value="meta-llama/llama-3.3-70b-instruct">Meta Llama 3.3 70B</option>
+                  <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-2" data-agent-group="openrouter">
+                <label class="text-xs text-slate-400">OpenRouter API Key</label>
+                <input type="password" name="OPENROUTER_API_KEY" placeholder="저장된 경우 변경 시에만 입력"
                   class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
               </div>
               <div class="flex flex-col gap-2">

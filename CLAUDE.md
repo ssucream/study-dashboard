@@ -44,7 +44,7 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 ## 설계 의도
 
 - **STT 엔진**: faster-whisper (CTranslate2 기반, torch 불필요). base 모델이 기본값.
-- **요약 엔진**: Gemini API (gemini-2.5-flash 등). 키는 DB에서 암호화 로드.
+- **요약 엔진**: Gemini / OpenAI / OpenRouter API 중 선택 (provider: `AI_AGENT`). 키는 DB에서 암호화 로드.
 - **설정 저장소**: SQLite (`db/app.db`) — `crypto.py`로 민감값 암호화 후 저장.
 - **다운로드 경로**: 컨테이너 내 `/downloads` — 기본 compose에서 호스트 `./downloads`를 마운트.
 - **출력 파일**: mp4(영상), mp3(음성, ffmpeg 변환), txt(STT 결과), `_summarized.txt`(요약).
@@ -113,7 +113,7 @@ CREATE TABLE settings (
 ```
 
 민감 키 목록 (저장 시 반드시 `encrypt()` 적용):
-`GOOGLE_API_KEY`, `TELEGRAM_BOT_TOKEN`
+`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`
 
 ## 설정 항목
 
@@ -129,9 +129,13 @@ CREATE TABLE settings (
 | `STT_LANGUAGE` | STT 언어 | `ko` / `en` / `` (자동) |
 | `WHISPER_MODEL` | faster-whisper 모델 | `tiny` / `base` / `small` / `medium` / `large` |
 | `AI_ENABLED` | AI 요약 사용 여부 | `true` / `false` |
-| `AI_AGENT` | AI 에이전트 | `gemini` |
+| `AI_AGENT` | AI 요약 provider | `gemini` / `openai` / `openrouter` |
 | `GEMINI_MODEL` | Gemini 모델 ID | `gemini-2.5-flash` |
 | `GOOGLE_API_KEY` | Gemini API 키 (암호화) | — |
+| `OPENAI_MODEL` | OpenAI 모델 ID | `gpt-4o-mini` |
+| `OPENAI_API_KEY` | OpenAI API 키 (암호화) | — |
+| `OPENROUTER_MODEL` | OpenRouter 모델 ID | `openai/gpt-4o-mini` |
+| `OPENROUTER_API_KEY` | OpenRouter API 키 (암호화) | — |
 | `SUMMARY_PROMPT_EXTRA` | 요약 프롬프트 추가 지시 | — |
 | `TELEGRAM_ENABLED` | 텔레그램 알림 사용 여부 | `true` / `false` |
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 (암호화) | — |

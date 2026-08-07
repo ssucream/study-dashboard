@@ -338,10 +338,10 @@ async def start_summarize(task_id: str):
 
     if Config.AI_ENABLED != "true":
         raise HTTPException(status_code=409, detail="설정에서 AI 요약을 먼저 활성화하세요.")
-    if not Config.GOOGLE_API_KEY:
-        raise HTTPException(status_code=409, detail="Gemini API 키가 설정되어 있지 않습니다.")
-    if not Config.GEMINI_MODEL:
-        raise HTTPException(status_code=409, detail="Gemini 모델이 설정되어 있지 않습니다.")
+    if not Config.get_ai_api_key():
+        raise HTTPException(status_code=409, detail="AI 요약 API 키가 설정되어 있지 않습니다.")
+    if not Config.get_ai_model():
+        raise HTTPException(status_code=409, detail="AI 요약 모델이 설정되어 있지 않습니다.")
 
     task = task_manager.get(task_id)
     if not task:
@@ -386,8 +386,8 @@ async def start_summarize(task_id: str):
                 summarize,
                 txt_path,
                 agent=Config.AI_AGENT or "gemini",
-                api_key=Config.GOOGLE_API_KEY,
-                model=Config.GEMINI_MODEL,
+                api_key=Config.get_ai_api_key(),
+                model=Config.get_ai_model(),
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
@@ -413,7 +413,7 @@ async def start_summarize(task_id: str):
             "summary_id": summary_id,
             "txt_path": txt_path_str,
             "agent": Config.AI_AGENT or "gemini",
-            "model": Config.GEMINI_MODEL,
+            "model": Config.get_ai_model(),
         }
 
     managed = task_manager.create(
@@ -444,10 +444,10 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
 
     if Config.AI_ENABLED != "true":
         raise HTTPException(status_code=409, detail="설정에서 AI 요약을 먼저 활성화하세요.")
-    if not Config.GOOGLE_API_KEY:
-        raise HTTPException(status_code=409, detail="Gemini API 키가 설정되어 있지 않습니다.")
-    if not Config.GEMINI_MODEL:
-        raise HTTPException(status_code=409, detail="Gemini 모델이 설정되어 있지 않습니다.")
+    if not Config.get_ai_api_key():
+        raise HTTPException(status_code=409, detail="AI 요약 API 키가 설정되어 있지 않습니다.")
+    if not Config.get_ai_model():
+        raise HTTPException(status_code=409, detail="AI 요약 모델이 설정되어 있지 않습니다.")
 
     course = _find_course(req.course_id)
     if not course:
@@ -540,8 +540,8 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
                 summarize,
                 current_txt,
                 agent=Config.AI_AGENT or "gemini",
-                api_key=Config.GOOGLE_API_KEY,
-                model=Config.GEMINI_MODEL,
+                api_key=Config.get_ai_api_key(),
+                model=Config.get_ai_model(),
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
@@ -569,7 +569,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
             "summary_path": str(summary_path),
             "summary_id": summary_id,
             "agent": Config.AI_AGENT or "gemini",
-            "model": Config.GEMINI_MODEL,
+            "model": Config.get_ai_model(),
         }
 
     managed = task_manager.create(

@@ -176,6 +176,33 @@ def test_config_load_disables_ai_without_gemini_key_or_model(tmp_path):
     assert Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "false"
 
 
+def test_config_load_gates_ai_per_agent(tmp_path):
+    """AI_AGENT가 openai면 Gemini 키가 아니라 OpenAI 키/모델 유무로 게이팅한다."""
+    import src.db as db
+    from src.config import Config
+
+    with _make_db(tmp_path):
+        db.set_many(
+            {
+                "DOWNLOAD_ENABLED": "true",
+                "DOWNLOAD_RULE": "mp3",
+                "STT_ENABLED": "true",
+                "AI_ENABLED": "true",
+                "AI_AGENT": "openai",
+                "GOOGLE_API_KEY": "gemini-key-should-be-ignored",
+                "GEMINI_MODEL": "gemini-2.5-flash",
+                "OPENAI_API_KEY": "sk-test",
+                "OPENAI_MODEL": "gpt-4o-mini",
+            }
+        )
+        Config.load()
+
+    assert Config.AI_AGENT == "openai"
+    assert Config.AI_ENABLED == "true"
+    assert Config.get_ai_api_key() == "sk-test"
+    assert Config.get_ai_model() == "gpt-4o-mini"
+
+
 def test_config_loads_default_summary_prompt(tmp_path):
     """요약 프롬프트 설정이 없으면 기본 프롬프트를 사용한다."""
     from src.config import Config

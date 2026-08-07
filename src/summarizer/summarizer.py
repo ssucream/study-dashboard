@@ -1,7 +1,7 @@
 """
 AI 요약기.
 
-STT로 생성된 .txt 파일을 Gemini API로 요약한다.
+STT로 생성된 .txt 파일을 Gemini / OpenAI / OpenRouter API로 요약한다.
 결과는 동일 경로에 _summarized.txt로 저장된다.
 """
 
@@ -74,6 +74,37 @@ GEMINI_MODEL_IDS = [m[0] for m in _GEMINI_MODELS]
 GEMINI_MODEL_LABELS = [m[1] for m in _GEMINI_MODELS]
 GEMINI_DEFAULT_MODEL = GEMINI_MODEL_IDS[0]
 
+_OPENAI_MODELS = [
+    ("gpt-4o-mini", "GPT-4o mini  (저렴, 권장)"),
+    ("gpt-4o", "GPT-4o"),
+    ("gpt-4.1-mini", "GPT-4.1 mini"),
+    ("gpt-4.1", "GPT-4.1"),
+    ("o3-mini", "o3-mini  (추론 특화)"),
+]
+
+OPENAI_MODEL_IDS = [m[0] for m in _OPENAI_MODELS]
+OPENAI_MODEL_LABELS = [m[1] for m in _OPENAI_MODELS]
+OPENAI_DEFAULT_MODEL = OPENAI_MODEL_IDS[0]
+
+_OPENROUTER_MODELS = [
+    ("openai/gpt-4o-mini", "OpenAI GPT-4o mini  (권장)"),
+    ("anthropic/claude-3.5-sonnet", "Anthropic Claude 3.5 Sonnet"),
+    ("google/gemini-2.0-flash-001", "Google Gemini 2.0 Flash"),
+    ("meta-llama/llama-3.3-70b-instruct", "Meta Llama 3.3 70B"),
+    ("deepseek/deepseek-chat", "DeepSeek Chat"),
+]
+
+OPENROUTER_MODEL_IDS = [m[0] for m in _OPENROUTER_MODELS]
+OPENROUTER_MODEL_LABELS = [m[1] for m in _OPENROUTER_MODELS]
+OPENROUTER_DEFAULT_MODEL = OPENROUTER_MODEL_IDS[0]
+
+# 설정 화면에서 provider 드롭다운 구성에 사용 (agent id, 표시 라벨, 모델 id 목록, 모델 라벨 목록, 기본 모델)
+AI_AGENTS = [
+    ("gemini", "Google Gemini", GEMINI_MODEL_IDS, GEMINI_MODEL_LABELS, GEMINI_DEFAULT_MODEL),
+    ("openai", "OpenAI", OPENAI_MODEL_IDS, OPENAI_MODEL_LABELS, OPENAI_DEFAULT_MODEL),
+    ("openrouter", "OpenRouter", OPENROUTER_MODEL_IDS, OPENROUTER_MODEL_LABELS, OPENROUTER_DEFAULT_MODEL),
+]
+
 
 def summarize(
     txt_path: Path,
@@ -90,8 +121,8 @@ def summarize(
 
     Args:
         txt_path:     STT 결과 .txt 파일 경로
-        agent:        "gemini" (고정)
-        api_key:      Gemini API 키
+        agent:        "gemini" / "openai" / "openrouter"
+        api_key:      agent에 해당하는 API 키
         model:        사용할 모델 ID
         extra_prompt: 사용자 추가 지시사항 (기본 프롬프트 뒤에 추가)
         course_name:  과목명 (비전채플 감지에 사용)
@@ -113,6 +144,10 @@ def summarize(
 
     if agent == "gemini":
         summary = _summarize_gemini(api_key, model, prompt)
+    elif agent == "openai":
+        summary = _summarize_openai(api_key, model, prompt)
+    elif agent == "openrouter":
+        summary = _summarize_openrouter(api_key, model, prompt)
     else:
         raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
 
@@ -165,3 +200,36 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
             f"Gemini 응답이 비어 있습니다 (finish_reason={finish_reason}). 안전 필터 차단이나 토큰 제한일 수 있습니다."
         )
     return response.text
+
+
+def _summarize_openai(api_key: str, model: str, prompt: str) -> str:
+    return _summarize_openai_compatible(api_key, model, prompt, base_url=None, provider_label="OpenAI")
+
+
+def _summarize_openrouter(api_key: str, model: str, prompt: str) -> str:
+    return _summarize_openai_compatible(
+        api_key, model, prompt, base_url="https://openrouter.ai/api/v1", provider_label="OpenRouter"
+    )
+
+
+def _summarize_openai_compatible(
+    api_key: str, model: str, prompt: str, *, base_url: str | None, provider_label: str
+) -> str:
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise RuntimeError("openai 패키지가 설치되어 있지 않습니다.\n설치: pip install openai") from None
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    choice = response.choices[0] if response.choices else None
+    content = choice.message.content if choice and choice.message else None
+    if not content:
+        finish_reason = choice.finish_reason if choice else None
+        raise RuntimeError(
+            f"{provider_label} 응답이 비어 있습니다 (finish_reason={finish_reason}). 안전 필터 차단이나 토큰 제한일 수 있습니다."
+        )
+    return content

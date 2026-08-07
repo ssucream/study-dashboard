@@ -23,6 +23,19 @@ def _default_download_dir() -> str:
     return "/downloads"
 
 
+# AI 요약 provider → 저장 필드 매핑. 신규 provider 추가 시 이 두 dict만 확장하면 됨.
+_AGENT_KEY_ATTR = {
+    "gemini": "GOOGLE_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+_AGENT_MODEL_ATTR = {
+    "gemini": "GEMINI_MODEL",
+    "openai": "OPENAI_MODEL",
+    "openrouter": "OPENROUTER_MODEL",
+}
+
+
 def _read_version() -> str:
     """CHANGELOG.md의 첫 번째 ## [vX.Y.Z] 항목에서 버전을 읽어온다."""
     import re
@@ -73,6 +86,8 @@ class Config:
     LMS_USER_ID: str = ""
     LMS_PASSWORD: str = ""
     GOOGLE_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
     WHISPER_MODEL: str = "base"
     STT_LANGUAGE: str = "ko"
     STT_DELETE_AUDIO_AFTER_TRANSCRIBE: str = ""
@@ -84,6 +99,8 @@ class Config:
     AI_ENABLED: str = ""
     AI_AGENT: str = ""
     GEMINI_MODEL: str = ""
+    OPENAI_MODEL: str = ""
+    OPENROUTER_MODEL: str = ""
     SUMMARY_PROMPT_TEMPLATE: str = ""
     SUMMARY_PROMPT_EXTRA: str = ""
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: str = ""
@@ -102,6 +119,8 @@ class Config:
         cls.LMS_USER_ID = session_user_id
         cls.LMS_PASSWORD = session_password
         cls.GOOGLE_API_KEY = _load_credential("GOOGLE_API_KEY")
+        cls.OPENAI_API_KEY = _load_credential("OPENAI_API_KEY")
+        cls.OPENROUTER_API_KEY = _load_credential("OPENROUTER_API_KEY")
         cls.TELEGRAM_BOT_TOKEN = _load_credential("TELEGRAM_BOT_TOKEN")
         cls.WHISPER_MODEL = db.get("WHISPER_MODEL", "base")
         cls.STT_LANGUAGE = db.get("STT_LANGUAGE", "ko")
@@ -117,17 +136,39 @@ class Config:
         if cls.STT_ENABLED != "true":
             cls.STT_DELETE_AUDIO_AFTER_TRANSCRIBE = "false"
             cls.AI_ENABLED = "false"
-        cls.AI_AGENT = db.get("AI_AGENT", "")
+        cls.AI_AGENT = db.get("AI_AGENT", "") or "gemini"
         cls.GEMINI_MODEL = db.get("GEMINI_MODEL", "")
+        cls.OPENAI_MODEL = db.get("OPENAI_MODEL", "")
+        cls.OPENROUTER_MODEL = db.get("OPENROUTER_MODEL", "")
         cls.SUMMARY_PROMPT_TEMPLATE = db.get("SUMMARY_PROMPT_TEMPLATE", _default_summary_prompt())
         cls.SUMMARY_PROMPT_EXTRA = db.get("SUMMARY_PROMPT_EXTRA", "")
         cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = db.get("SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE", "false")
-        if cls.AI_ENABLED == "true" and (not cls.GOOGLE_API_KEY or not cls.GEMINI_MODEL):
+        if cls.AI_ENABLED == "true" and (not cls.get_ai_api_key() or not cls.get_ai_model()):
             cls.AI_ENABLED = "false"
             cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = "false"
         cls.TELEGRAM_ENABLED = db.get("TELEGRAM_ENABLED", "")
         cls.TELEGRAM_CHAT_ID = db.get("TELEGRAM_CHAT_ID", "")
         cls.TELEGRAM_AUTO_DELETE = db.get("TELEGRAM_AUTO_DELETE", "")
+
+    @classmethod
+    def get_ai_api_key(cls, agent: str | None = None) -> str:
+        """agent(생략 시 현재 AI_AGENT)에 해당하는 API 키를 반환한다."""
+        return getattr(cls, _AGENT_KEY_ATTR.get(agent or cls.AI_AGENT, "GOOGLE_API_KEY"))
+
+    @classmethod
+    def get_ai_model(cls, agent: str | None = None) -> str:
+        """agent(생략 시 현재 AI_AGENT)에 해당하는 모델을 반환한다."""
+        return getattr(cls, _AGENT_MODEL_ATTR.get(agent or cls.AI_AGENT, "GEMINI_MODEL"))
+
+    @classmethod
+    def has_ai_credentials(cls, agent: str, pending: dict | None = None) -> bool:
+        """agent의 API 키·모델이 (저장 대기 중인 값 포함) 모두 설정되어 있는지 확인한다."""
+        pending = pending or {}
+        key_field = _AGENT_KEY_ATTR.get(agent, "GOOGLE_API_KEY")
+        model_field = _AGENT_MODEL_ATTR.get(agent, "GEMINI_MODEL")
+        has_key = bool(pending.get(key_field) or getattr(cls, key_field))
+        has_model = bool(pending.get(model_field) or getattr(cls, model_field))
+        return has_key and has_model
 
     @classmethod
     def get_telegram_credentials(cls) -> tuple[str, str] | None:
@@ -175,7 +216,7 @@ class Config:
         ai_enabled: bool,
         ai_agent: str,
         api_key: str,
-        gemini_model: str = "",
+        ai_model: str = "",
         summary_prompt_template: str = "",
         summary_prompt_extra: str = "",
         download_enabled: bool = True,
@@ -184,10 +225,14 @@ class Config:
         summary_delete_text_after_summarize: bool = False,
     ) -> None:
         """설정 항목을 DB에 저장한다."""
+        ai_agent = ai_agent or "gemini"
+        key_attr = _AGENT_KEY_ATTR.get(ai_agent, "GOOGLE_API_KEY")
+        model_attr = _AGENT_MODEL_ATTR.get(ai_agent, "GEMINI_MODEL")
+
         auto_download_after_play = auto_download_after_play and download_enabled
         normalized_rule = normalize_download_rule(download_rule)
         stt_enabled = stt_enabled and download_enabled and normalized_rule in {"mp3", "both"}
-        ai_enabled = ai_enabled and stt_enabled and bool(api_key) and bool(gemini_model)
+        ai_enabled = ai_enabled and stt_enabled and bool(api_key) and bool(ai_model)
         if not stt_enabled:
             ai_enabled = False
 
@@ -205,8 +250,8 @@ class Config:
         cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = (
             "true" if ai_enabled and summary_delete_text_after_summarize else "false"
         )
-        if gemini_model:
-            cls.GEMINI_MODEL = gemini_model
+        if ai_model:
+            setattr(cls, model_attr, ai_model)
 
         to_save: dict = {
             "DOWNLOAD_DIR": fixed_download_dir,
@@ -221,11 +266,11 @@ class Config:
             "SUMMARY_PROMPT_EXTRA": summary_prompt_extra,
             "SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE": cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE,
         }
-        if gemini_model:
-            to_save["GEMINI_MODEL"] = gemini_model
+        if ai_model:
+            to_save[model_attr] = ai_model
         if ai_enabled:
-            cls.GOOGLE_API_KEY = api_key
-            to_save["GOOGLE_API_KEY"] = encrypt(api_key) if api_key else ""
+            setattr(cls, key_attr, api_key)
+            to_save[key_attr] = encrypt(api_key) if api_key else ""
 
         db.set_many(to_save)
 

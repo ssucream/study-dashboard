@@ -252,7 +252,7 @@ def run_settings() -> None:
         ai_enabled=ai_enabled,
         ai_agent=ai_agent,
         api_key=api_key,
-        gemini_model=gemini_model,
+        ai_model=gemini_model,
         summary_prompt_template=summary_prompt_template,
         summary_prompt_extra=summary_prompt_extra,
         stt_delete_audio_after_transcribe=stt_delete_audio_after_transcribe,

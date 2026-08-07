@@ -2,6 +2,29 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.8.0] - 2026-08-07
+
+### AI 요약 provider 다중 지원 (Gemini/OpenAI/OpenRouter) · 릴리즈 프로세스 정리
+
+#### 추가
+
+- **AI 요약 provider 확장**: Gemini 전용이던 AI 요약이 OpenAI, OpenRouter API도 지원하도록 확장
+  - `src/summarizer/summarizer.py`: `_summarize_openai`/`_summarize_openrouter` 추가 (OpenRouter는 `openai` SDK를 `base_url`만 바꿔 재사용), provider별 모델 목록 상수(`OPENAI_MODEL_IDS`, `OPENROUTER_MODEL_IDS` 등) 추가
+  - `src/config.py`: provider별 API 키/모델 저장 필드(`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_MODEL`, `OPENROUTER_MODEL`) 추가, `Config.get_ai_api_key()`/`get_ai_model()`/`has_ai_credentials()`로 provider 라우팅을 일원화 (기존 `GOOGLE_API_KEY`/`GEMINI_MODEL` 필드는 하위 호환 유지)
+  - 설정 화면(웹 대시보드): 기존 "Gemini 모델" 선택을 "AI 모델" provider 드롭다운으로 변경, 선택한 provider에 따라 하위 모델 목록·API 키 입력이 전환되도록 UI 개편 (`frontend/index.html`, `frontend/js/settings.js`)
+  - `pyproject.toml`: `openai` 패키지 의존성 추가
+
+#### 변경
+
+- GitHub Release 제목 형식을 `study-dashboard vX.Y.Z` → `vX.Y.Z`로 단순화 (`.github/workflows/release.yml`)
+- `README.md`: Gemini 전용 문구를 "AI 요약"으로 일반화, `docs/gemini-api-key.md` 삭제 (provider 다중화에 따라 특정 API 키 발급 가이드 제거)
+
+#### 테스트
+
+- `tests/test_summarizer.py`, `tests/test_config.py`에 provider별 요약 함수·라우팅·AI 활성화 게이팅 테스트 추가 (129/129 통과)
+
+---
+
 ## [v26.7.4] - 2026-08-07
 
 ### CRITICAL: 로그인 후 모든 페이지에서 "로그인이 필요합니다" 오류

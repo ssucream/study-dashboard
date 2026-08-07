@@ -23,7 +23,7 @@
 ## 자동화 파이프라인
 
 ```
-강의 영상 백그라운드 재생 → Whisper STT → Gemini 요약 → 마크다운 저장 → 웹 열람
+강의 영상 백그라운드 재생 → Whisper STT → AI 요약 → 마크다운 저장 → 웹 열람
 ```
 
 ---
@@ -36,7 +36,7 @@
 | 학기·과목·강의 스크래핑 | 로그인 후 전체 강의 목록 자동 수집 |
 | 백그라운드 재생 | 영상·소리 출력 없이 강의 자동 재생 (출석 처리) |
 | 로컬 STT | faster-whisper로 오프라인 음성 텍스트 변환 |
-| AI 요약 | Gemini API로 강의 내용 자동 요약 |
+| AI 요약 | AI API로 강의 내용 자동 요약 |
 | 마크다운 대시보드 | 학기 → 과목 → 주차 계층으로 요약 열람 |
 | 자동 모드 | 스케줄에 따라 미시청 강의를 자동으로 재생·변환·요약 |
 | 실시간 상태 표시 | 현재 재생 중인 강의 및 다음 스케줄을 대시보드에 표시 |
@@ -87,7 +87,7 @@ study-dashboard/
 │   ├── player/           # 백그라운드 재생
 │   ├── converter/        # mp4 → mp3 (ffmpeg)
 │   ├── stt/              # faster-whisper STT
-│   └── summarizer/       # Gemini 요약
+│   └── summarizer/       # AI 요약
 ├── frontend/
 │   └── src/
 │       ├── pages/        # Login, Semesters, Courses, Summary
@@ -105,7 +105,7 @@ study-dashboard/
 |------|------|
 | 숭실대 Learning X 계정 | 학번 + 비밀번호 |
 | Docker | 컨테이너 실행 환경 |
-| Google API 키 | Gemini 요약 사용 시 필요 — [발급 방법](docs/gemini-api-key.md) |
+| AI 요약 API 키 | AI 요약 사용 시 필요 |
 
 ---
 
@@ -125,7 +125,7 @@ docker compose up --build
 ```
 
 브라우저에서 `http://localhost:3000` 접속 후 Learning X 계정으로 로그인합니다.
-계정, Gemini API 키, 다운로드/STT/텔레그램 옵션은 웹 대시보드의 **설정** 화면에서 저장합니다.
+계정, AI 요약 API 키, 다운로드/STT/텔레그램 옵션은 웹 대시보드의 **설정** 화면에서 저장합니다.
 
 ---
 
