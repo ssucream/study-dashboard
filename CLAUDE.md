@@ -5,15 +5,27 @@
 
 ## 실행 방법
 
+`docker-compose.yml` 기본값은 Docker Hub 이미지(`igor0670/study-dashboard-{backend,frontend}`)를
+pull해서 실행하는 배포용 구성이다. 소스를 직접 수정하며 개발할 때는 각 서비스의 `image:` 줄을
+지우고 바로 아래 주석 처리된 `build:` 섹션(및 소스 볼륨 마운트)의 주석을 해제해야 한다.
+
 ```bash
-docker compose up              # 정상 실행 (backend: FastAPI :8000, frontend: nginx :3000/:3443)
+# 배포용 (기본값) — Docker Hub 이미지 pull
+docker compose pull
+docker compose up -d
+
+# 로컬 개발용 — docker-compose.yml의 image:를 build:로 먼저 교체한 뒤
 docker compose up --build      # 이미지 재빌드 후 실행
 ```
 
 - 웹 대시보드(backend + frontend 2서비스) 구조이므로 TUI 시절의 `run --rm` 대신 `up` 사용
-- `src/`, `backend/`는 볼륨 마운트되어 있어 코드 수정 후 재빌드 없이 반영됨 (uvicorn `--reload`)
+- 로컬 빌드 모드로 전환 시 `src/`, `backend/`, `frontend/index.html`·`js/`·`nginx.conf`를 볼륨 마운트하면
+  코드 수정 후 재빌드 없이 반영됨 (uvicorn `--reload`)
 - 다운로드 파일은 `./downloads/`에 저장됨 (컨테이너 내 `/downloads`)
 - 설정 DB는 `./db/app.db`에 영속화됨 (컨테이너 내 `/db/app.db`)
+- HTTPS 접속을 위한 자체 서명 인증서가 없으면 `scripts/generate-local-cert.sh`로 최초 1회 생성
+- 태그(`v*`) push 시 `.github/workflows/release.yml`이 backend/frontend 이미지를 Docker Hub에 빌드·푸시하고
+  GitHub Release를 생성한다. Docker Hub 계정 인증은 저장소 secret(`DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`)로 처리
 - Whisper 모델, Playwright Chromium은 named volume에 캐시되어 재빌드 시 재다운로드 불필요
 
 ## 개발 환경 설정

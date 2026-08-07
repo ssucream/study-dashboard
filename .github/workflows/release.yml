@@ -1,4 +1,4 @@
-name: Build & Publish Docker Image
+name: Build & Publish Docker Images
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: write  # GitHub Release 생성 권한
 
 jobs:
-  # ── Docker 이미지 빌드 및 Docker Hub 배포 ──────────────────────────
+  # ── Docker 이미지 빌드 및 Docker Hub 배포 (backend + frontend) ──────
   build-and-push:
-    name: Build & Push Docker Image
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
 
     steps:
@@ -27,25 +27,46 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: 이미지 태그 및 메타데이터 생성
-        id: meta
+      - name: backend 이미지 태그 및 메타데이터 생성
+        id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/study-helper
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/study-dashboard-backend
           tags: |
             type=ref,event=tag
             type=raw,value=latest
 
-      - name: 빌드 및 Docker Hub 푸시
+      - name: backend 빌드 및 Docker Hub 푸시
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: backend/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
           platforms: linux/amd64,linux/arm64   # Intel + Apple Silicon 대응
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: frontend 이미지 태그 및 메타데이터 생성
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/study-dashboard-frontend
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: frontend 빌드 및 Docker Hub 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          platforms: linux/amd64,linux/arm64   # Intel + Apple Silicon 대응
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   # ── GitHub Release 생성 ────────────────────────────────────────────
   release:
@@ -82,12 +103,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: study-helper ${{ github.ref_name }}
+          name: study-dashboard ${{ github.ref_name }}
           overwrite_files: true
           body: |
-            # study-helper ${{ github.ref_name }}
+            # study-dashboard ${{ github.ref_name }}
 
-            숭실대학교 LMS 강의 영상 재생 · 다운로드 · AI 요약 도구.
+            숭실대학교 Canvas Learning X 강의를 백그라운드로 재생(출석 처리)하거나
+            다운로드/변환/AI 요약할 수 있는 웹 대시보드.
 
             ---
 
@@ -101,33 +123,48 @@ jobs:
 
             - **Docker Desktop** ([다운로드](https://www.docker.com/products/docker-desktop/))
               - Windows 사용자는 **WSL2** 활성화 필요 ([가이드](https://learn.microsoft.com/ko-kr/windows/wsl/install))
+            - **OpenSSL** — 로컬 HTTPS 인증서 생성용 (대부분 OS에 기본 설치됨)
 
             ---
 
             ## 설치 및 실행
 
-            1. 아래 첨부 파일(`docker-compose.yml`, `.env.example`) 다운로드
+            1. 아래 첨부된 `docker-compose.yml`을 빈 폴더에 다운로드
 
-            2. `.env.example` → `.env`로 이름 변경 후 필요한 값 설정 (학번/비밀번호는 첫 실행 시 자동 저장)
+            2. 로컬 HTTPS 인증서 생성 (최초 1회, 브라우저 접속용 자체 서명 인증서):
+               ```bash
+               mkdir -p certs
+               openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
+                 -keyout certs/local.key -out certs/local.crt \
+                 -subj "/CN=localhost" \
+                 -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+               ```
 
-            3. 이미지 pull 및 실행
-            ```bash
-            docker compose pull
-            docker compose run --rm study-helper
-            ```
+            3. 이미지 pull 및 실행:
+               ```bash
+               docker compose pull
+               docker compose up -d
+               ```
 
-            > `docker compose up` 사용 금지 — 로그 멀티플렉싱으로 TUI가 깨집니다. `run --rm`만 사용하세요.
+            4. 브라우저에서 https://localhost:3443 접속 (자체 서명 인증서 경고는 무시하고 진행) 후
+               학번/비밀번호로 로그인 → 설정 화면에서 다운로드/STT/AI 요약/텔레그램 알림 설정
+
+            > 설정값과 다운로드 파일은 실행 폴더의 `db/`, `downloads/`, `logs/`, `.secret_key`에 저장되어
+            > 컨테이너를 내렸다 올려도 보존됩니다. 학번/비밀번호는 DB에 저장하지 않고 세션 메모리에만 유지합니다.
+
+            소스를 직접 수정하며 개발하려면 저장소를 clone한 뒤 `docker-compose.yml`의 `image:` 줄을
+            주석 처리된 `build:` 섹션으로 바꿔서 사용하세요.
 
             ---
 
             ## Docker Hub
 
             ```bash
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/study-helper:${{ github.ref_name }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/study-dashboard-backend:${{ github.ref_name }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/study-dashboard-frontend:${{ github.ref_name }}
             ```
 
           files: |
             docker-compose.yml
-            .env.example
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
           draft: false

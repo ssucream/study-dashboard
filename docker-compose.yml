@@ -3,28 +3,36 @@ services:
   # ── 백엔드: FastAPI REST API ──────────────────────────────────────
   backend:
     container_name: dashboard-backend
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    # 개발용 --reload (파일 변경 시 자동 재시작)
-    # 프로덕션 전환 시: --workers 4 로 교체
-    command: backend.main:app --host 0.0.0.0 --port 8000 --reload
+    image: igor0670/study-dashboard-backend:latest
+
+    # ── 소스 수정 후 로컬 빌드 시 위 image: 줄을 지우고 아래 두 줄을 사용 ──────
+    # build:
+    #   context: .
+    #   dockerfile: backend/Dockerfile
+    # ──────────────────────────────────────────────────────────────────
+
+    # 배포 이미지 기본값: --workers 4. 로컬 빌드로 개발할 때는 아래 --reload 줄로 교체.
+    command: backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+    # command: backend.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       # 직접 접근은 로컬 개발/헬스체크용으로만 노출하고, 브라우저 트래픽은 nginx HTTPS를 사용한다.
       - "127.0.0.1:8000:8000"
     environment:
       - TZ=Asia/Seoul
     volumes:
-      # 소스 코드 볼륨 마운트 — 재빌드 없이 핫 리로드
-      - ./src:/app/src
-      - ./backend:/app/backend
-      - ./CHANGELOG.md:/app/CHANGELOG.md
       # 암호화 키 — 없으면 Docker가 디렉토리로 생성하지만 crypto.py가 자동 처리
       - ./.secret_key:/app/.secret_key
       - ./db:/db
       # 다운로드 저장소 — 앱 다운로드 경로는 컨테이너 내부 /downloads 로 고정한다.
       - ./downloads:/downloads
       - ./logs:/app/logs
+
+      # ── 소스 코드 볼륨 마운트 — 로컬 빌드로 개발할 때만 활성화 (재빌드 없이 반영) ──
+      # - ./src:/app/src
+      # - ./backend:/app/backend
+      # - ./CHANGELOG.md:/app/CHANGELOG.md
+      # ──────────────────────────────────────────────────────────────────
+
       # 캐시 (재빌드 시 재다운로드 방지)
       - whisper-cache:/root/.cache/huggingface
       - playwright-cache:/root/.cache/ms-playwright
@@ -33,18 +41,24 @@ services:
   # ── 프론트엔드: nginx 정적 서빙 + API 프록시 ─────────────────────
   frontend:
     container_name: dashboard-frontend
-    build:
-      context: ./frontend
+    image: igor0670/study-dashboard-frontend:latest
+
+    # ── 소스 수정 후 로컬 빌드 시 위 image: 줄을 지우고 아래 줄을 사용 ────────
+    # build: ./frontend
+    # ──────────────────────────────────────────────────────────────────
+
     ports:
       # HTTP(3000)는 HTTPS(3443)로 리다이렉트
       - "3000:80"
       - "3443:443"
     volumes:
-      # 개발용 — HTML/nginx 수정 시 재빌드 없이 즉시 반영
-      - ./frontend/index.html:/usr/share/nginx/html/index.html:ro
-      - ./frontend/js:/usr/share/nginx/html/js:ro
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certs:/etc/nginx/certs:ro
+
+      # ── 개발용 — HTML/JS/nginx 수정 시 재빌드 없이 즉시 반영 (로컬 빌드 시에만) ──
+      # - ./frontend/index.html:/usr/share/nginx/html/index.html:ro
+      # - ./frontend/js:/usr/share/nginx/html/js:ro
+      # - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # ──────────────────────────────────────────────────────────────────
     depends_on:
       - backend
     restart: unless-stopped
