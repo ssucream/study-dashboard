@@ -11,9 +11,11 @@ services:
     #   dockerfile: backend/Dockerfile
     # ──────────────────────────────────────────────────────────────────
 
-    # 배포 이미지 기본값: --workers 4. 로컬 빌드로 개발할 때는 아래 --reload 줄로 교체.
-    command: backend.main:app --host 0.0.0.0 --port 8000 --workers 4
-    # command: backend.main:app --host 0.0.0.0 --port 8000 --reload
+    # 로그인 세션(app_state.scraper)이 프로세스 메모리 싱글턴이라 워커를 늘리면 안 된다 —
+    # 워커마다 별도 프로세스로 상태가 분리돼 로그인 직후에도 다른 워커가 처리하는 요청은
+    # "로그인이 필요합니다"로 실패한다. 반드시 단일 프로세스로 유지할 것.
+    command: backend.main:app --host 0.0.0.0 --port 8000
+    # command: backend.main:app --host 0.0.0.0 --port 8000 --reload   # 로컬 빌드로 개발할 때
     ports:
       # 직접 접근은 로컬 개발/헬스체크용으로만 노출하고, 브라우저 트래픽은 nginx HTTPS를 사용한다.
       - "127.0.0.1:8000:8000"
