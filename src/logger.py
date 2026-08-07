@@ -43,3 +43,14 @@ def get_error_logger(action: str) -> tuple[logging.Logger, Path]:
     logger.addHandler(handler)
 
     return logger, log_path
+
+
+def close_error_logger(logger: logging.Logger) -> None:
+    """get_error_logger()로 만든 로거의 FileHandler를 닫고 해제한다.
+
+    호출하지 않으면 재생/다운로드 실패마다 fd가 누적되어 장시간 구동 시
+    "Too many open files"로 이어진다.
+    """
+    for handler in list(logger.handlers):
+        handler.close()
+        logger.removeHandler(handler)

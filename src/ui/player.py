@@ -18,7 +18,7 @@ from rich.progress import (
 )
 
 from src.config import Config
-from src.logger import get_error_logger
+from src.logger import close_error_logger, get_error_logger
 from src.player.background_player import PlaybackState, play_lecture
 from src.scraper.models import LectureItem
 
@@ -189,6 +189,7 @@ async def run_player(page, lec: LectureItem, debug: bool = False) -> tuple[bool,
         logger.info("--- 재생 로그 ---")
         for line in log_buffer:
             logger.info(line)
+        close_error_logger(logger)
         console.print(f"  [dim]로그 저장: {log_path}[/dim]")
         _tg_playback_error(lec, failed=True)
         return False, True, False
@@ -203,6 +204,7 @@ async def run_player(page, lec: LectureItem, debug: bool = False) -> tuple[bool,
         logger.info("--- 재생 로그 ---")
         for line in log_buffer:
             logger.info(line)
+        close_error_logger(logger)
         console.print(f"  [dim]로그 저장: {log_path}[/dim]")
         return True, False, False
 
@@ -214,6 +216,7 @@ async def run_player(page, lec: LectureItem, debug: bool = False) -> tuple[bool,
     logger.info("--- 재생 로그 ---")
     for line in log_buffer:
         logger.info(line)
+    close_error_logger(logger)
     console.print("  [yellow]재생이 중단되었습니다.[/yellow]")
     console.print(f"  [dim]로그 저장: {log_path}[/dim]")
     _tg_playback_error(lec, failed=False)

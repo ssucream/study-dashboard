@@ -23,7 +23,7 @@ from rich.progress import (
 from rich.text import Text
 
 from src.config import Config
-from src.logger import get_error_logger
+from src.logger import close_error_logger, get_error_logger
 
 console = Console()
 
@@ -94,6 +94,7 @@ async def run_download(page, lec, course, audio_only: bool = False, both: bool =
         logger.info(f"강의: {lec.title}")
         logger.info(f"URL: {lec.full_url}")
         logger.info("오류: 영상 URL 추출 실패 (3회 재시도 후에도 실패)")
+        close_error_logger(logger)
         console.print(f"  [dim]로그 저장: {log_path}[/dim]")
         from src.notifier.telegram_notifier import notify_download_error
 
@@ -143,6 +144,7 @@ async def run_download(page, lec, course, audio_only: bool = False, both: bool =
         logger.info(f"URL: {lec.full_url}")
         logger.info("영상 URL: [CDN URL 로그 제외]")
         logger.error(f"다운로드 실패: {e}")
+        close_error_logger(logger)
         console.print(f"  [dim]로그 저장: {log_path}[/dim]")
         from src.notifier.telegram_notifier import notify_download_error
 

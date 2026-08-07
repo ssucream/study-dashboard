@@ -1179,8 +1179,8 @@ $('#btn-refresh-logs').addEventListener('click', () => loadLogs());
 function _checkSettingsBanner(settings) {
   const s = settings || state.settings;
   const missing = [];
-  if (s.AI_ENABLED === 'true' && !s.GOOGLE_API_KEY) missing.push('Google API 키 미설정');
-  if (s.TELEGRAM_ENABLED === 'true' && !s.TELEGRAM_BOT_TOKEN) missing.push('텔레그램 봇 토큰 미설정');
+  if (s.AI_ENABLED === 'true' && !s.HAS_GOOGLE_API_KEY) missing.push('Google API 키 미설정');
+  if (s.TELEGRAM_ENABLED === 'true' && !s.HAS_TELEGRAM_BOT_TOKEN) missing.push('텔레그램 봇 토큰 미설정');
   const banner = $('#settings-banner');
   if (!banner) return;
   if (missing.length) {

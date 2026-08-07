@@ -94,7 +94,7 @@ async def start_download(req: DownloadTaskRequest):
     if not course:
         raise HTTPException(status_code=404, detail="과목을 찾을 수 없습니다.")
 
-    from src.downloader.pipeline import DownloadUnsupportedError, download_lecture_media
+    from src.downloader.pipeline import DownloadUnsupportedError, PipelineStageError, download_lecture_media
 
     async def run(managed: ManagedTask):
         def on_stage(stage: str, message: str, progress_pct: float | None = None) -> None:
@@ -195,6 +195,9 @@ async def start_download(req: DownloadTaskRequest):
             )
             return {}
         except Exception as e:
+            if isinstance(e, PipelineStageError):
+                managed.update(result=e.partial_result)
+                e = e.original
             if managed.stage == "transcribing":
                 event_log.record_event(
                     event_type="stt",

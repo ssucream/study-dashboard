@@ -4,7 +4,7 @@ export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 export function esc(str) {
   const d = document.createElement('div');
   d.textContent = str ?? '';
-  return d.innerHTML;
+  return d.innerHTML.replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
 export function fmtTime(sec) {

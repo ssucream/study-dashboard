@@ -156,3 +156,47 @@ async def test_download_pipeline_does_not_transcribe_mp4_rule(monkeypatch, tmp_p
 
     assert result["stt"] == {"enabled": False}
     assert all(file["type"] != "txt" for file in result["files"])
+
+
+@pytest.mark.asyncio
+async def test_download_pipeline_preserves_files_when_stt_fails(monkeypatch, tmp_path):
+    """mp4/mp3까지 받은 뒤 STT가 실패해도 이미 완료된 파일 정보는 보존돼야 한다."""
+
+    async def fake_extract_video_url(page, lecture_url):
+        return "https://cdn.example/video.mp4"
+
+    async def fake_download_video_with_browser(page, video_url, save_path, on_progress=None):
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"mp4")
+
+    def fake_convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None):
+        mp3_path = mp3_path if mp3_path else mp4_path.with_suffix(".mp3")
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
+        mp3_path.write_bytes(b"mp3")
+        return mp3_path
+
+    def fake_transcribe(*args, **kwargs):
+        raise RuntimeError("모델 로딩 실패")
+
+    monkeypatch.setattr(pipeline, "extract_video_url", fake_extract_video_url)
+    monkeypatch.setattr(pipeline, "download_video_with_browser", fake_download_video_with_browser)
+    monkeypatch.setattr(pipeline, "convert_to_mp3", fake_convert_to_mp3)
+    monkeypatch.setattr("src.stt.transcriber.transcribe", fake_transcribe)
+
+    with pytest.raises(pipeline.PipelineStageError) as exc_info:
+        await pipeline.download_lecture_media(
+            page=object(),
+            lecture_url="https://canvas.ssu.ac.kr/courses/1/items/1",
+            lecture_title="1강",
+            week_label="1주차",
+            course_name="테스트",
+            download_dir=str(tmp_path),
+            rule="both",
+            stt_enabled=True,
+        )
+
+    partial = exc_info.value.partial_result
+    assert isinstance(exc_info.value.original, RuntimeError)
+    assert any(f["type"] == "mp4" for f in partial["files"])
+    assert any(f["type"] == "mp3" for f in partial["files"])
+    assert all(f["type"] != "txt" for f in partial["files"])

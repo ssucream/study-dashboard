@@ -44,3 +44,14 @@ def test_convert_to_mp3_ffmpeg_failure(tmp_path):
         mock_run.return_value = MagicMock(returncode=1, stderr="encoding error")
         with pytest.raises(RuntimeError, match="mp3 변환 실패"):
             convert_to_mp3(mp4)
+
+
+def test_convert_to_mp3_timeout(tmp_path):
+    """ffmpeg가 무한 대기하면 timeout으로 RuntimeError."""
+    import subprocess
+
+    mp4 = tmp_path / "video.mp4"
+    mp4.write_bytes(b"fake")
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=1800)):
+        with pytest.raises(RuntimeError, match="30분을 초과"):
+            convert_to_mp3(mp4)

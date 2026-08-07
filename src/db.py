@@ -10,9 +10,11 @@ get/set을 즉시 사용할 수 있다. init()는 명시적 초기화가 필요�
 import sqlite3
 from pathlib import Path
 
+_schema_ready_paths: set[str] = set()
+
 
 def _db_path() -> Path:
-    base = Path("/db") if Path("/db").exists() else Path("db")
+    base = Path("/db") if Path("/db").exists() else Path(__file__).resolve().parent.parent / "db"
     return base / "app.db"
 
 
@@ -22,7 +24,10 @@ def _connect() -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
-    _ensure_schema(conn)
+    key = str(path.resolve())
+    if key not in _schema_ready_paths:
+        _ensure_schema(conn)
+        _schema_ready_paths.add(key)
     return conn
 
 

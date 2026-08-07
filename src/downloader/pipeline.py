@@ -21,6 +21,15 @@ class DownloadUnsupportedError(RuntimeError):
     """LMS 강의 유형상 다운로드를 지원하지 않을 때 발생한다."""
 
 
+class PipelineStageError(RuntimeError):
+    """STT/AI 요약 단계 실패 시, 이미 완료된 mp4/mp3 등의 파일 정보를 보존해 전달한다."""
+
+    def __init__(self, original: Exception, partial_result: dict[str, Any]):
+        super().__init__(str(original))
+        self.original = original
+        self.partial_result = partial_result
+
+
 def build_download_paths(
     *,
     download_dir: str,
@@ -178,82 +187,96 @@ async def download_lecture_media(
 
     stt_result: dict[str, Any] = {"enabled": False}
     summary_result: dict[str, Any] = {"enabled": False}
-    if stt_enabled and normalized_rule in {"mp3", "both"}:
-        stage(
-            "stt_loading",
-            f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.",
-            95,
-        )
-        from src.stt.transcriber import transcribe
-
-        loop = asyncio.get_running_loop()
-
-        def _on_model_loaded() -> None:
-            loop.call_soon_threadsafe(lambda: on_stage("transcribing", "STT 변환 중입니다.", 96) if on_stage else None)
-
-        await loop.run_in_executor(
-            None,
-            partial(
-                transcribe,
-                mp3_path,
-                model_size=stt_model or "base",
-                language=stt_language or "",
-                on_model_loaded=_on_model_loaded,
-                output_path=txt_path,
-            ),
-        )
-        files.append({"type": "txt", "path": str(txt_path)})
-        audio_deleted = False
-        if delete_audio_after_stt:
-            mp3_path.unlink(missing_ok=True)
-            audio_deleted = True
-            if mp3_file is not None:
-                mp3_file["deleted"] = "true"
-        stt_result = {
-            "enabled": True,
-            "status": "completed",
-            "txt_path": str(txt_path),
-            "audio_path": str(mp3_path),
-            "audio_deleted": audio_deleted,
-            "model": stt_model or "base",
-            "language": stt_language or "",
-        }
-        if ai_enabled and ai_api_key and ai_model:
-            stage("summarizing", "AI 요약 중입니다.", 98)
-            from src.summarizer.summarizer import summarize
+    try:
+        if stt_enabled and normalized_rule in {"mp3", "both"}:
+            stage(
+                "stt_loading",
+                f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.",
+                95,
+            )
+            from src.stt.transcriber import transcribe
 
             loop = asyncio.get_running_loop()
+
+            def _on_model_loaded() -> None:
+                loop.call_soon_threadsafe(
+                    lambda: on_stage("transcribing", "STT 변환 중입니다.", 96) if on_stage else None
+                )
+
             await loop.run_in_executor(
                 None,
                 partial(
-                    summarize,
-                    txt_path,
-                    agent=ai_agent or "gemini",
-                    api_key=ai_api_key,
-                    model=ai_model,
-                    prompt_template=summary_prompt_template or "",
-                    extra_prompt=summary_prompt_extra or "",
-                    course_name=course_name,
-                    output_path=summary_path,
+                    transcribe,
+                    mp3_path,
+                    model_size=stt_model or "base",
+                    language=stt_language or "",
+                    on_model_loaded=_on_model_loaded,
+                    output_path=txt_path,
                 ),
             )
-            files.append({"type": "summary", "path": str(summary_path)})
-            text_deleted = False
-            if delete_text_after_summary:
-                txt_path.unlink(missing_ok=True)
-                text_deleted = True
-                for file in files:
-                    if file.get("type") == "txt" and file.get("path") == str(txt_path):
-                        file["deleted"] = "true"
-            summary_result = {
+            files.append({"type": "txt", "path": str(txt_path)})
+            audio_deleted = False
+            if delete_audio_after_stt:
+                mp3_path.unlink(missing_ok=True)
+                audio_deleted = True
+                if mp3_file is not None:
+                    mp3_file["deleted"] = "true"
+            stt_result = {
                 "enabled": True,
                 "status": "completed",
-                "summary_path": str(summary_path),
                 "txt_path": str(txt_path),
-                "text_deleted": text_deleted,
-                "agent": ai_agent or "gemini",
-                "model": ai_model,
+                "audio_path": str(mp3_path),
+                "audio_deleted": audio_deleted,
+                "model": stt_model or "base",
+                "language": stt_language or "",
             }
+            if ai_enabled and ai_api_key and ai_model:
+                stage("summarizing", "AI 요약 중입니다.", 98)
+                from src.summarizer.summarizer import summarize
+
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    partial(
+                        summarize,
+                        txt_path,
+                        agent=ai_agent or "gemini",
+                        api_key=ai_api_key,
+                        model=ai_model,
+                        prompt_template=summary_prompt_template or "",
+                        extra_prompt=summary_prompt_extra or "",
+                        course_name=course_name,
+                        output_path=summary_path,
+                    ),
+                )
+                files.append({"type": "summary", "path": str(summary_path)})
+                text_deleted = False
+                if delete_text_after_summary:
+                    txt_path.unlink(missing_ok=True)
+                    text_deleted = True
+                    for file in files:
+                        if file.get("type") == "txt" and file.get("path") == str(txt_path):
+                            file["deleted"] = "true"
+                summary_result = {
+                    "enabled": True,
+                    "status": "completed",
+                    "summary_path": str(summary_path),
+                    "txt_path": str(txt_path),
+                    "text_deleted": text_deleted,
+                    "agent": ai_agent or "gemini",
+                    "model": ai_model,
+                }
+    except Exception as e:
+        raise PipelineStageError(
+            e,
+            {
+                "download_rule": normalized_rule,
+                "download_dir": str(base_dir),
+                "files": files,
+                "stt": stt_result,
+                "summary": summary_result,
+            },
+        ) from e
 
     stage("completed", "다운로드가 완료되었습니다.", 100)
     return {

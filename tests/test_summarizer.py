@@ -68,3 +68,30 @@ def test_gemini_model_ids():
 
     assert len(GEMINI_MODEL_IDS) > 0
     assert GEMINI_DEFAULT_MODEL in GEMINI_MODEL_IDS
+
+
+def test_build_summary_prompt_tolerates_stray_braces():
+    """사용자 편집 템플릿에 {text} 외의 {..}가 섞여도 KeyError가 나면 안 된다."""
+    from src.summarizer.summarizer import build_summary_prompt
+
+    prompt = build_summary_prompt(
+        "강의 내용",
+        prompt_template="설정값 {GOOGLE_API_KEY} 참고해서 요약:\n{text}",
+    )
+    assert "강의 내용" in prompt
+    assert "{GOOGLE_API_KEY}" in prompt
+
+
+def test_summarize_gemini_empty_response_raises():
+    """Gemini가 안전 필터 등으로 빈 응답을 주면 명확한 RuntimeError."""
+    from unittest.mock import MagicMock
+
+    from src.summarizer.summarizer import _summarize_gemini
+
+    fake_response = MagicMock(text=None, candidates=[MagicMock(finish_reason="SAFETY")])
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = fake_response
+
+    with patch("google.genai.Client", return_value=fake_client):
+        with pytest.raises(RuntimeError, match="비어 있습니다"):
+            _summarize_gemini("key", "model", "prompt")

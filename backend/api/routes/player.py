@@ -54,7 +54,7 @@ def _mark_lecture_completed(course_id: str, lecture_url: str) -> bool:
 def _write_playback_log(title: str, lecture_url: str, error: str, log_buffer: list[str]) -> str | None:
     """웹 재생 실패 로그를 파일로 남기고 경로를 반환한다."""
     try:
-        from src.logger import get_error_logger
+        from src.logger import close_error_logger, get_error_logger
 
         logger, log_path = get_error_logger("web_play")
         logger.info(f"강의: {title}")
@@ -63,6 +63,7 @@ def _write_playback_log(title: str, lecture_url: str, error: str, log_buffer: li
         logger.info("--- 재생 로그 ---")
         for line in log_buffer:
             logger.info(line)
+        close_error_logger(logger)
         return str(Path(log_path).resolve())
     except Exception:
         return None

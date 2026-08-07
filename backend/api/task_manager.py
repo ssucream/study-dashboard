@@ -128,6 +128,12 @@ class TaskManager:
             except asyncio.CancelledError:
                 managed.update(status="cancelled", stage="cancelled", message="작업이 취소되었습니다.")
             except Exception as e:
+                # PipelineStageError: mp4/mp3까지는 끝났지만 STT/요약에서 실패한 경우,
+                # 이미 완료된 파일 정보를 잃지 않도록 result에 보존한다.
+                partial_result = getattr(e, "partial_result", None)
+                if partial_result is not None:
+                    managed.update(result=partial_result)
+                    e = getattr(e, "original", e)
                 managed.update(status="failed", stage="failed", error=str(e), message="작업이 실패했습니다.")
             finally:
                 if managed.status in _TERMINAL_STATUSES:

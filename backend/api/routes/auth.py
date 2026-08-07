@@ -105,7 +105,7 @@ async def login(req: LoginRequest):
         event_type="auth",
         action="login",
         status="success",
-        actor_user_id=req.user_id,
+        actor_user_id=event_log.mask_user_id(req.user_id),
         message="웹 로그인 성공",
     )
 

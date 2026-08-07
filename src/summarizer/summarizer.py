@@ -132,7 +132,7 @@ def build_summary_prompt(
     """요약 요청 프롬프트를 구성한다."""
     template = prompt_template or DEFAULT_SUMMARY_PROMPT
     if "{text}" in template:
-        prompt = template.format(text=text)
+        prompt = template.replace("{text}", text)
     else:
         prompt = f"{template.rstrip()}\n\n강의 텍스트:\n{text}"
     if "비전채플" in course_name:
@@ -157,4 +157,9 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
+    if not response.text:
+        finish_reason = None
+        if response.candidates:
+            finish_reason = response.candidates[0].finish_reason
+        raise RuntimeError(f"Gemini 응답이 비어 있습니다 (finish_reason={finish_reason}). 안전 필터 차단이나 토큰 제한일 수 있습니다.")
     return response.text

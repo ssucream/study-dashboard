@@ -32,6 +32,7 @@ async def get_settings():
         "AI_ENABLED": Config.AI_ENABLED,
         "AI_AGENT": Config.AI_AGENT,
         "GEMINI_MODEL": Config.GEMINI_MODEL,
+        "HAS_GOOGLE_API_KEY": bool(Config.GOOGLE_API_KEY),
         "SUMMARY_PROMPT_TEMPLATE": Config.get_summary_prompt_template(),
         "SUMMARY_PROMPT_DEFAULT": DEFAULT_SUMMARY_PROMPT,
         "SUMMARY_PROMPT_EXTRA": Config.SUMMARY_PROMPT_EXTRA,
@@ -39,6 +40,7 @@ async def get_settings():
         "TELEGRAM_ENABLED": Config.TELEGRAM_ENABLED,
         "TELEGRAM_CHAT_ID": Config.TELEGRAM_CHAT_ID,
         "TELEGRAM_AUTO_DELETE": Config.TELEGRAM_AUTO_DELETE,
+        "HAS_TELEGRAM_BOT_TOKEN": bool(Config.TELEGRAM_BOT_TOKEN),
     }
 
 

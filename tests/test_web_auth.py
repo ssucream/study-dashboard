@@ -163,4 +163,4 @@ async def test_login_and_logout_write_event_logs(monkeypatch, tmp_path):
 
     assert [event["action"] for event in events] == ["logout", "login"]
     assert all(event_log.is_timestamp_format(event["created_at"]) for event in events)
-    assert events[1]["actor_user_id"] == "student123"
+    assert events[1]["actor_user_id"] == event_log.mask_user_id("student123")
