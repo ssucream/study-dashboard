@@ -2,6 +2,32 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.7.3] - 2026-08-07
+
+### GitHub Actions Docker Hub 배포 복구 · 버전 체크 저장소 참조 수정
+
+v26.7.2를 실제로 GitHub Actions를 통해 Docker Hub에 배포하는 과정에서 발견된 배포 인프라 결함 수정.
+
+#### 수정
+
+- **`release.yml`이 v26.7.0 리팩터링 이전 상태로 방치되어 태그 배포가 실패하던 문제**: 루트 `Dockerfile`을
+  찾던 것을 `backend/Dockerfile` + `frontend/Dockerfile` 개별 빌드·푸시로 교체, GitHub Release 안내문도
+  폐기된 `study-helper` TUI 사용법 대신 실제 dashboard 설치 절차로 교체 (참고: `study-helper` 프로젝트의 배포 방식)
+- **`docker-compose.yml` 배포 모드 전환**: 기본값을 Docker Hub 이미지 pull 방식으로 변경
+  (`igor0670/study-dashboard-backend`, `igor0670/study-dashboard-frontend`). 로컬 소스 빌드는 주석 처리된
+  대안으로 유지
+- **버전 체크가 엉뚱한 프로젝트를 참조하던 문제**: `src/updater.py`가 여전히 `igor0670/study-helper`(별개 프로젝트)의
+  Docker Hub 태그를 조회하고 있어 "업데이트 있음" 배너가 study-dashboard가 아닌 study-helper의 최신 버전으로
+  잘못 표시되던 버그 수정 — `igor0670/study-dashboard-backend`를 조회하도록 교체
+- CI `ruff format` 실패 수정 (`src/summarizer/summarizer.py` 긴 라인 줄바꿈)
+
+#### 테스트
+
+- `test_updater.py` 신규 추가 (5건)
+- 전체 122/122 통과, ruff lint·format 클린
+
+---
+
 ## [v26.7.2] - 2026-08-07
 
 ### 코드 리뷰 후속 조치 — 설정 배너 오탐, 보안·안정성 MEDIUM 10건, 프론트/백엔드 생명주기 8건, 코드 정리 LOW 7건

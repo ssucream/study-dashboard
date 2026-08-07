@@ -3,7 +3,7 @@
 import re
 
 _DOCKERHUB_TAGS_URL = (
-    "https://hub.docker.com/v2/repositories/igor0670/study-helper/tags?page_size=25&ordering=last_updated"
+    "https://hub.docker.com/v2/repositories/igor0670/study-dashboard-backend/tags?page_size=25&ordering=last_updated"
 )
 _VERSION_RE = re.compile(r"^v?(\d+\.\d+\.\d+)$")
 
