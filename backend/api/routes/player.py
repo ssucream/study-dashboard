@@ -114,32 +114,18 @@ async def _notify_playback_error(course_name: str, week_label: str, lecture_titl
 
 def _schedule_auto_download(req: PlayRequest, course, play_task_id: str) -> None:
     """재생 완료 후 자동 다운로드 task를 백그라운드로 생성한다."""
-    from src.config import Config
-    from src.downloader.pipeline import download_lecture_media
+    from src.downloader.pipeline import run_download_from_config
 
     async def run(managed: ManagedTask) -> dict:
         def on_stage(stage: str, message: str, progress_pct: float | None = None) -> None:
             managed.update(stage=stage, message=message, progress_pct=progress_pct)
 
-        return await download_lecture_media(
+        return await run_download_from_config(
             page=app_state.scraper._page,
             lecture_url=req.lecture_url,
             lecture_title=req.lecture_title,
             week_label=req.week_label,
             course_name=course.long_name,
-            download_dir=Config.get_download_dir(),
-            rule=Config.get_download_rule(),
-            stt_enabled=Config.STT_ENABLED == "true",
-            stt_model=Config.WHISPER_MODEL or "base",
-            stt_language=Config.STT_LANGUAGE or "",
-            delete_audio_after_stt=Config.STT_DELETE_AUDIO_AFTER_TRANSCRIBE == "true",
-            ai_enabled=Config.AI_ENABLED == "true",
-            ai_agent=Config.AI_AGENT or "gemini",
-            ai_api_key=Config.GOOGLE_API_KEY or "",
-            ai_model=Config.GEMINI_MODEL or "",
-            summary_prompt_template=Config.get_summary_prompt_template(),
-            summary_prompt_extra=Config.SUMMARY_PROMPT_EXTRA or "",
-            delete_text_after_summary=Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "true",
             on_stage=on_stage,
         )
 
@@ -372,7 +358,9 @@ async def stop_play():
     elif app_state.play_task and not app_state.play_task.done():
         app_state.play_task.cancel()
     app_state.play_task_id = None
-    app_state.is_playing = False
+    # is_playing은 여기서 곧바로 False로 두지 않는다 — task_manager.cancel()이 3초 안에
+    # 정리를 못 끝내면 Playwright cleanup이 실행 중인 채로 재생 재시도가 가능해진다.
+    # 실제 정리 완료 시점은 run()의 finally 블록(player.py)이 신뢰 가능한 단일 소스다.
     app_state.playback.status = "stopped"
     app_state.playback.error = None
     event_log.record_event(

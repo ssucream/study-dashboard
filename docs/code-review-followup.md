@@ -30,43 +30,27 @@ CRITICAL 1건과 HIGH 10건은 처리 완료(`v26.7.0`, `v26.7.1`). 아래는 �
   - 학번 평문 로깅 불일치(`backend/api/routes/auth.py:108`, 로그인 성공 경로도 `mask_user_id()` 적용)
   - `esc()` 따옴표 미이스케이프(`frontend/js/utils.js`, `&quot;`/`&#39;` 추가 이스케이프)
   - 회귀 테스트: 기존 `test_web_auth.py` 마스킹 검증으로 갱신, 전체 111개 통과, ruff 클린
+- MEDIUM(프론트엔드 UX 4건 + 백엔드 생명주기 4건, 2026-08-07 처리):
+  - 검색창 타이핑 중 다운로드 진행 폴링 고아화: `state.activeDownloads`(url→taskId)로 추적,
+    `_renderCourseWeeks` 재렌더링 시 진행 중인 다운로드를 새 row/버튼에 다시 붙임 (`app.js`)
+  - 두 폴링 루프가 `#player-message-log`를 두고 경쟁: 자동 다운로드 진행률 표시를
+    `#player-auto-download-log`로 분리 (`index.html`, `app.js`)
+  - 로그아웃 후 폴링이 안 멈춤: `showLogin()`이 `state.userId`를 비워 WS `onclose`의
+    재폴링 재시작 조건을 차단 (`app.js`)
+  - 요약 폴링 체인이 로그아웃 시 취소 안 됨: 재귀 `setTimeout`을 `state.downloadTaskTimers`에
+    등록해 `stopAllDownloadTaskPolling()`이 잡을 수 있게 함 (`app.js`)
+  - 서버 종료 시 실행 중 task 미취소: lifespan 종료 시 미완료 task를 `task_manager.cancel()`로
+    일괄 취소해 부분 상태 방치 방지 (`backend/main.py`)
+  - 로그아웃 시 scraper 정리 중 AttributeError: play/auto task가 아직 실행 중이면 scraper
+    close/None을 건너뛰고 다음 로그인이 정리하도록 미룸 (`auth.py`)
+  - `stop_play`가 취소 완료 전 `is_playing=False`: 중복 대입 제거, `run()`의 `finally`를
+    유일한 신뢰 소스로 둠 (`player.py`)
+  - 다운로드 Config 매핑 3중 중복+드리프트: `pipeline.py`에 `run_download_from_config()` 헬퍼
+    추가, `tasks.py`/`player.py`/`auto.py` 세 호출부를 이 헬퍼 호출로 통합
+  - 회귀 테스트 4건 추가(`test_web_player.py`/`test_web_auth.py`/신규 `test_main_lifespan.py`),
+    전체 114개 통과, ruff 클린
 - **LAN 노출**: 의도적으로 그대로 둠 — 서버와 접속 PC가 분리된 환경이라 LAN 접근이 필요조건.
   사용자 확인 완료 (재검토 시 다시 이슈화하지 말 것)
-
----
-
-## MEDIUM
-
-### 보안
-- **의존성 취약점**: `starlette 1.0.0`(PYSEC-2026-161/-248/-2280/-249 등 6건),
-  `cryptography 46.0.5`(PYSEC-2026-36, `Hash.update()` 버퍼오버플로) — `uv lock --upgrade-package starlette --upgrade-package cryptography` 로 갱신 검토.
-  다른 outdated 패키지: `requests`, `urllib3`, `idna`, `pyasn1`, `pygments`, `setuptools`, `click`.
-- **학번 평문 로깅 불일치**: `backend/api/routes/auth.py:108` — 로그인 *성공* 경로만 `event_log.mask_user_id()`를
-  안 쓰고 원문 학번을 기록. 실패 경로(64, 78, 89행)는 이미 마스킹 중이라 일관성만 맞추면 됨.
-- **`esc()`가 따옴표 미이스케이프**: `frontend/js/utils.js:5-7` — `< > &`만 이스케이프, `"`/`'` 안 함.
-  `app.js:378`에서 HTML attribute 안에 쓰이지만 현재는 `_sanitize_filename()`이 `"`를 걸러줘서
-  실제 익스플로잇은 안 됨. 두 sanitizer 중 하나만 바뀌어도 깨질 수 있는 fragile 상태.
-
-### 프론트엔드 UX
-- **검색창 타이핑 중 다운로드 진행 폴링 고아화**: `frontend/js/app.js:498, 752, 1245` — `#filter-query`
-  입력마다 강의 목록을 재렌더링해 진행 중인 다운로드 row/버튼이 detached됨 → 같은 강의 중복 다운로드 가능.
-- **두 폴링 루프가 `#player-message-log`를 두고 경쟁**: `app.js:865` vs `:195` — auto-download 진행률 표시가
-  재생 상태 WS 업데이트(2초 주기)에 계속 지워짐. 별도 엘리먼트로 분리 필요.
-- **로그아웃 후 폴링이 안 멈춤**: `app.js:51, 155` — `showLogin()`이 `state.userId`를 안 지워서 WS `onclose`
-  콜백이 로그인 화면에서도 `setInterval` 폴링을 계속 돌림.
-- **요약 폴링 체인이 로그아웃 시 취소 안 됨**: `app.js:773, 824` — `state.downloadTaskTimers`에 등록 안 된
-  재귀 `setTimeout`이라 `stopAllDownloadTaskPolling()`이 못 잡음.
-
-### 백엔드 생명주기
-- **서버 종료 시 실행 중 task 미취소**: `backend/main.py:35` (lifespan) — `docker compose down` 중 다운로드가
-  있으면 task 이력이 안 남고, 부분 mp4가 `exists: true`로 잘못 보고됨.
-- **로그아웃 시 scraper 정리 중 실행 중 task가 AttributeError**: `backend/api/routes/auth.py:51, 129` —
-  `scraper=None` 처리 후 살아있는 task가 `app_state.scraper._page`를 참조하면 원본 에러가 그대로 노출됨.
-- **`stop_play`가 취소 완료 전에 `is_playing=False`**: `backend/api/routes/player.py:369` — `task_manager.cancel`이
-  3초 뒤 포기해도 곧바로 재생 가능 상태가 돼서, Playwright 정리가 안 끝난 채 재생 재시도 가능.
-- **다운로드 Config 매핑 3중 중복 + 드리프트**: `tasks.py:97-117` / `player.py:120-140` / `auto.py:84-104` —
-  이미 `tasks.py`는 `ai_api_key=Config.GOOGLE_API_KEY`, 나머지 둘은 `... or ""`로 갈라짐.
-  `src/downloader/pipeline.py`에 `run_download_from_config(...)` 헬퍼로 통합 권장.
 
 ---
 

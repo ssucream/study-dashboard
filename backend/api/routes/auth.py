@@ -126,7 +126,13 @@ async def logout():
     elif app_state.auto.task and not app_state.auto.task.done():
         app_state.auto.task.cancel()
 
-    if app_state.scraper:
+    # cancel()이 timeout으로 포기했다면 task가 아직 app_state.scraper._page를 참조하며 실행 중일 수 있다.
+    # 그 상태에서 scraper를 닫고 None으로 비우면 살아있는 task가 원본 AttributeError로 죽는다.
+    # 이 경우 scraper 정리는 건너뛰고 다음 로그인(login())이 남은 scraper를 닫도록 미룬다.
+    task_still_running = (app_state.play_task and not app_state.play_task.done()) or (
+        app_state.auto.task and not app_state.auto.task.done()
+    )
+    if app_state.scraper and not task_still_running:
         await app_state.scraper.close()
         app_state.scraper = None
 

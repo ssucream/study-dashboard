@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -34,6 +35,12 @@ async def lifespan(app: FastAPI):
 
     yield
     from backend.api.state import app_state
+
+    # 실행 중인 task(다운로드/재생/자동모드)를 취소해 부분 상태로 방치되지 않게 한다.
+    # task_manager.cancel()의 finally에서 _persist_task()가 최종 상태를 DB에 남긴다.
+    running = [t for t in task_manager.list() if t.task and not t.task.done()]
+    if running:
+        await asyncio.gather(*(task_manager.cancel(t.id) for t in running))
 
     if app_state.scraper:
         await app_state.scraper.close()

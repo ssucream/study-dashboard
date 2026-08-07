@@ -286,3 +286,43 @@ async def download_lecture_media(
         "stt": stt_result,
         "summary": summary_result,
     }
+
+
+async def run_download_from_config(
+    *,
+    page: Any,
+    lecture_url: str,
+    lecture_title: str,
+    week_label: str,
+    course_name: str,
+    on_stage: StageCallback | None = None,
+) -> dict[str, Any]:
+    """현재 Config 값을 기준으로 download_lecture_media를 호출한다.
+
+    tasks.py/player.py(자동 다운로드)/auto.py 세 호출부가 각자 Config→kwargs 매핑을
+    복붙해오면서 drift(ai_api_key/ai_model의 `or ""` 유무 차이 등)가 생기는 것을 막기 위한
+    단일 진입점.
+    """
+    from src.config import Config
+
+    return await download_lecture_media(
+        page=page,
+        lecture_url=lecture_url,
+        lecture_title=lecture_title,
+        week_label=week_label,
+        course_name=course_name,
+        download_dir=Config.get_download_dir(),
+        rule=Config.get_download_rule(),
+        stt_enabled=Config.STT_ENABLED == "true",
+        stt_model=Config.WHISPER_MODEL or "base",
+        stt_language=Config.STT_LANGUAGE or "",
+        delete_audio_after_stt=Config.STT_DELETE_AUDIO_AFTER_TRANSCRIBE == "true",
+        ai_enabled=Config.AI_ENABLED == "true",
+        ai_agent=Config.AI_AGENT or "gemini",
+        ai_api_key=Config.GOOGLE_API_KEY or "",
+        ai_model=Config.GEMINI_MODEL or "",
+        summary_prompt_template=Config.get_summary_prompt_template(),
+        summary_prompt_extra=Config.SUMMARY_PROMPT_EXTRA or "",
+        delete_text_after_summary=Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "true",
+        on_stage=on_stage,
+    )

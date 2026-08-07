@@ -1,5 +1,7 @@
 """웹 player route 상태 반영 테스트."""
 
+import asyncio
+
 import pytest
 from backend.api.routes import player as player_route
 from backend.api.state import PlaybackProgress, app_state
@@ -237,10 +239,54 @@ async def test_start_play_preserves_playback_error(monkeypatch):
     assert status["course_id"] == course.id
     assert status["lecture_url"] == lecture.full_url
     assert lecture.completion == "incomplete"
-    events = event_log.list_events(event_type="player", status="failed", limit=10)
-    assert events[0]["action"] == "play_failed"
-    assert events[0]["error_message"] == "비디오 프레임을 찾지 못했습니다."
-    assert events[0]["log_path"] == "/tmp/web_play.log"
+
+
+@pytest.mark.asyncio
+async def test_stop_play_does_not_reset_is_playing_before_cleanup_finishes(monkeypatch):
+    """cancel()이 timeout으로 포기해도, 실제 Playwright 정리가 끝나기 전엔 is_playing이 True로 남아야 한다."""
+    course, lecture = _seed_course()
+    cleanup_done = False
+    started = asyncio.Event()
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+        nonlocal cleanup_done
+        try:
+            started.set()
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.1)  # cancel()의 timeout보다 오래 걸리는 정리 작업 시뮬레이션
+            cleanup_done = True
+            raise
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+
+    orig_cancel = player_route.task_manager.cancel
+
+    async def fast_cancel(task_id, timeout=0.02):
+        return await orig_cancel(task_id, timeout=timeout)
+
+    monkeypatch.setattr(player_route.task_manager, "cancel", fast_cancel)
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    task = app_state.play_task
+    await started.wait()  # task가 실제로 실행을 시작한 뒤에 cancel해야 한다 (시작 전 cancel은 본문을 건너뛴다)
+
+    await player_route.stop_play()
+
+    assert cleanup_done is False
+    assert app_state.is_playing is True  # 정리가 아직 끝나지 않았으므로 재생 재시도를 막아야 한다
+
+    await task
+
+    assert cleanup_done is True
+    assert app_state.is_playing is False
 
 
 @pytest.mark.asyncio

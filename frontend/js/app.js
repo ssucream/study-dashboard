@@ -55,6 +55,7 @@ function showLogin() {
   $('#input-password').value = '';
   $('#login-error').classList.add('hidden');
   state.deadlineChecked = false;
+  state.userId = '';
   stopStatusWs();
   stopAllDownloadTaskPolling();
 }
@@ -230,7 +231,7 @@ function _applyPlayerStatus(s) {
     if (state.currentPage === 'courses') loadCourses();
     if (s.auto_download_task_id && state.autoDownloadStartedFor !== s.auto_download_task_id) {
       state.autoDownloadStartedFor = s.auto_download_task_id;
-      _pollAutoDownloadTask(s.auto_download_task_id, messageLog);
+      _pollAutoDownloadTask(s.auto_download_task_id, $('#player-auto-download-log'));
     }
   }
 }
@@ -584,6 +585,18 @@ function _renderCourseWeeks(data, courseId) {
           const downloadStatus = document.createElement('span');
           downloadStatus.className = 'download-status hidden text-xs text-slate-400';
           actions.appendChild(downloadStatus);
+
+          // 검색/필터 재렌더링으로 이 row가 새로 만들어졌어도 진행 중인 다운로드가 있으면 폴링을 다시 붙인다.
+          const activeTaskId = state.activeDownloads[lec.full_url];
+          if (activeTaskId) {
+            row.dataset.downloadTaskId = activeTaskId;
+            updateDownloadButton(downloadBtn, '다운로드 중', true);
+            stopDownloadTaskPolling(activeTaskId);
+            pollDownloadTask(activeTaskId, row, downloadBtn);
+            state.downloadTaskTimers[activeTaskId] = setInterval(() => {
+              pollDownloadTask(activeTaskId, row, downloadBtn);
+            }, 1500);
+          }
         }
       }
       if (lec.summary && lec.summary.available && lec.summary.id) {
@@ -656,6 +669,7 @@ function stopDownloadTaskPolling(taskId) {
 
 function stopAllDownloadTaskPolling() {
   Object.keys(state.downloadTaskTimers).forEach(stopDownloadTaskPolling);
+  state.activeDownloads = {};
 }
 
 function updateDownloadButton(button, text, disabled) {
@@ -665,12 +679,19 @@ function updateDownloadButton(button, text, disabled) {
   button.classList.toggle('cursor-not-allowed', disabled);
 }
 
+function _clearActiveDownload(row, taskId) {
+  if (state.activeDownloads[row.dataset.url] === taskId) {
+    delete state.activeDownloads[row.dataset.url];
+  }
+}
+
 async function pollDownloadTask(taskId, row, button) {
   try {
     const task = await api('GET', `/api/tasks/${taskId}`);
     const pct = Number.isFinite(task.progress_pct) ? ` ${Math.round(task.progress_pct)}%` : '';
     if (task.status === 'completed') {
       stopDownloadTaskPolling(taskId);
+      _clearActiveDownload(row, taskId);
       const files = (task.result?.files || []).filter(f => f.deleted !== 'true');
       const fileText = files.length
         ? '완료: ' + files.map(f => f.path.split('/').pop()).join(', ')
@@ -717,12 +738,14 @@ async function pollDownloadTask(taskId, row, button) {
     }
     if (task.status === 'failed') {
       stopDownloadTaskPolling(taskId);
+      _clearActiveDownload(row, taskId);
       setDownloadStatus(row, task.error || '다운로드 실패', 'red');
       updateDownloadButton(button, '재시도', false);
       return;
     }
     if (task.status === 'cancelled') {
       stopDownloadTaskPolling(taskId);
+      _clearActiveDownload(row, taskId);
       setDownloadStatus(row, '다운로드가 취소되었습니다.', 'amber');
       updateDownloadButton(button, '다운로드', false);
       return;
@@ -730,6 +753,7 @@ async function pollDownloadTask(taskId, row, button) {
     setDownloadStatus(row, `${task.message || '다운로드 중...'}${pct}`, 'sky');
   } catch (err) {
     stopDownloadTaskPolling(taskId);
+    _clearActiveDownload(row, taskId);
     setDownloadStatus(row, err.message, 'red');
     updateDownloadButton(button, '재시도', false);
   }
@@ -746,6 +770,7 @@ async function startDownload(row, button) {
       week_label: row.dataset.week,
     });
     row.dataset.downloadTaskId = taskId;
+    state.activeDownloads[row.dataset.url] = taskId;
     updateDownloadButton(button, '다운로드 중', true);
     await pollDownloadTask(taskId, row, button);
     stopDownloadTaskPolling(taskId);
@@ -774,6 +799,7 @@ async function startSummarize(sourceTaskId, row, button) {
       try {
         const task = await api('GET', `/api/tasks/${summarizeTaskId}`);
         if (task.status === 'completed') {
+          stopDownloadTaskPolling(summarizeTaskId);
           button.remove();
           const summaryId = task.result?.summary_id;
           if (summaryId) {
@@ -789,13 +815,15 @@ async function startSummarize(sourceTaskId, row, button) {
           return;
         }
         if (task.status === 'failed' || task.status === 'cancelled') {
+          stopDownloadTaskPolling(summarizeTaskId);
           button.disabled = false;
           button.textContent = '요약 재시도';
           button.classList.remove('opacity-50', 'cursor-not-allowed');
           return;
         }
-        setTimeout(poll, 1500);
+        state.downloadTaskTimers[summarizeTaskId] = setTimeout(poll, 1500);
       } catch {
+        stopDownloadTaskPolling(summarizeTaskId);
         button.disabled = false;
         button.textContent = '요약 재시도';
         button.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -825,6 +853,7 @@ async function startSummarizeFromFile(courseId, lectureTitle, weekLabel, row, bu
       try {
         const task = await api('GET', `/api/tasks/${taskId}`);
         if (task.status === 'completed') {
+          stopDownloadTaskPolling(taskId);
           const summaryId = task.result?.summary_id;
           button.remove();
           if (summaryId) {
@@ -840,14 +869,16 @@ async function startSummarizeFromFile(courseId, lectureTitle, weekLabel, row, bu
           return;
         }
         if (task.status === 'failed' || task.status === 'cancelled') {
+          stopDownloadTaskPolling(taskId);
           button.disabled = false;
           button.textContent = 'AI 요약 재시도';
           button.classList.remove('opacity-50', 'cursor-not-allowed');
           return;
         }
         button.textContent = task.message || '요약 중...';
-        setTimeout(poll, 1500);
+        state.downloadTaskTimers[taskId] = setTimeout(poll, 1500);
       } catch {
+        stopDownloadTaskPolling(taskId);
         button.disabled = false;
         button.textContent = 'AI 요약 재시도';
         button.classList.remove('opacity-50', 'cursor-not-allowed');

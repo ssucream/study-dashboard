@@ -48,7 +48,7 @@ async def _run_post_play_pipeline(course, lec) -> None:
     from pathlib import Path
 
     from src.config import Config
-    from src.downloader.pipeline import DownloadUnsupportedError, download_lecture_media
+    from src.downloader.pipeline import DownloadUnsupportedError, run_download_from_config
     from src.notifier import telegram_notifier
 
     telegram_enabled = Config.TELEGRAM_ENABLED == "true"
@@ -81,25 +81,12 @@ async def _run_post_play_pipeline(course, lec) -> None:
 
     try:
         app_state.auto.pipeline_stage = "다운로드 준비 중..."
-        result = await download_lecture_media(
+        result = await run_download_from_config(
             page=app_state.scraper._page,
             lecture_url=lec.full_url,
             lecture_title=lec.title,
             week_label=lec.week_label,
             course_name=course.long_name,
-            download_dir=Config.get_download_dir(),
-            rule=Config.get_download_rule(),
-            stt_enabled=Config.STT_ENABLED == "true",
-            stt_model=Config.WHISPER_MODEL or "base",
-            stt_language=Config.STT_LANGUAGE or "",
-            delete_audio_after_stt=Config.STT_DELETE_AUDIO_AFTER_TRANSCRIBE == "true",
-            ai_enabled=Config.AI_ENABLED == "true",
-            ai_agent=Config.AI_AGENT or "gemini",
-            ai_api_key=Config.GOOGLE_API_KEY or "",
-            ai_model=Config.GEMINI_MODEL or "",
-            summary_prompt_template=Config.get_summary_prompt_template(),
-            summary_prompt_extra=Config.SUMMARY_PROMPT_EXTRA or "",
-            delete_text_after_summary=Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "true",
             on_stage=_on_stage,
         )
 

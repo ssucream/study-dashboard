@@ -164,3 +164,49 @@ async def test_login_and_logout_write_event_logs(monkeypatch, tmp_path):
     assert [event["action"] for event in events] == ["logout", "login"]
     assert all(event_log.is_timestamp_format(event["created_at"]) for event in events)
     assert events[1]["actor_user_id"] == event_log.mask_user_id("student123")
+
+
+@pytest.mark.asyncio
+async def test_logout_keeps_scraper_alive_if_task_still_running(monkeypatch):
+    """cancel()이 timeout으로 포기해도, 아직 실행 중인 task가 참조할 scraper를 닫으면 안 된다."""
+    from backend.api.task_manager import task_manager
+
+    class FakeScraper:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    scraper = FakeScraper()
+    app_state.scraper = scraper
+    app_state.user_id = "student"
+    started = asyncio.Event()
+
+    async def factory(managed):
+        try:
+            started.set()
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.1)  # cancel()의 timeout보다 오래 걸리는 정리 작업 시뮬레이션
+            raise
+
+    managed = task_manager.create("player", factory)
+    app_state.play_task_id = managed.id
+    app_state.play_task = managed.task
+    await started.wait()  # task가 실제로 실행을 시작한 뒤에 cancel해야 한다 (시작 전 cancel은 본문을 건너뛴다)
+
+    orig_cancel = auth_route.task_manager.cancel
+
+    async def fast_cancel(task_id, timeout=0.02):
+        return await orig_cancel(task_id, timeout=timeout)
+
+    monkeypatch.setattr(auth_route.task_manager, "cancel", fast_cancel)
+
+    await auth_route.logout()
+
+    assert scraper.closed is False
+    assert app_state.scraper is scraper
+
+    managed.task.cancel()
+    await managed.task

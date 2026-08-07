@@ -14,6 +14,7 @@ export const state = {
   currentCourseName: '',
   currentSummaryId: '',
   downloadTaskTimers: {},
+  activeDownloads: {},   // lecture_url -> taskId (검색/필터 재렌더링에도 진행 중 다운로드 폴링을 다시 붙이기 위함)
   settings: {
     DOWNLOAD_ENABLED: 'false',
     DOWNLOAD_RULE: 'mp4',
