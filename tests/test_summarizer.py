@@ -63,11 +63,14 @@ def test_summarize_unsupported_agent(tmp_path):
 
 
 def test_gemini_model_ids():
-    """모델 ID 목록이 비어있지 않아야 한다."""
+    """Gemini 목록은 2026-08 안정 모델을 기본으로 사용한다."""
     from src.summarizer.summarizer import GEMINI_DEFAULT_MODEL, GEMINI_MODEL_IDS
 
     assert len(GEMINI_MODEL_IDS) > 0
     assert GEMINI_DEFAULT_MODEL in GEMINI_MODEL_IDS
+    assert GEMINI_DEFAULT_MODEL == "gemini-3.5-flash-lite"
+    assert "gemini-3.6-flash" in GEMINI_MODEL_IDS
+    assert "gemini-2.0-flash" not in GEMINI_MODEL_IDS
 
 
 def test_build_summary_prompt_tolerates_stray_braces():
@@ -98,11 +101,13 @@ def test_summarize_gemini_empty_response_raises():
 
 
 def test_openai_model_ids():
-    """OpenAI 모델 ID 목록이 비어있지 않아야 한다."""
+    """OpenAI 목록은 GPT-5.6 계열을 기본으로 사용한다."""
     from src.summarizer.summarizer import OPENAI_DEFAULT_MODEL, OPENAI_MODEL_IDS
 
     assert len(OPENAI_MODEL_IDS) > 0
     assert OPENAI_DEFAULT_MODEL in OPENAI_MODEL_IDS
+    assert OPENAI_DEFAULT_MODEL == "gpt-5.6-luna"
+    assert {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} <= set(OPENAI_MODEL_IDS)
 
 
 def test_openrouter_model_ids():
@@ -111,6 +116,50 @@ def test_openrouter_model_ids():
 
     assert len(OPENROUTER_MODEL_IDS) > 0
     assert OPENROUTER_DEFAULT_MODEL in OPENROUTER_MODEL_IDS
+
+
+def test_openrouter_catalog_uses_account_filtered_endpoint():
+    """저장된 키가 있으면 OpenRouter 계정 정책을 반영한 모델 목록을 조회한다."""
+    from unittest.mock import MagicMock
+
+    from src.summarizer.summarizer import get_model_catalog
+
+    response = MagicMock()
+    response.json.return_value = {
+        "data": [
+            {
+                "id": "vendor/text-model",
+                "name": "Vendor Text Model",
+                "architecture": {"output_modalities": ["text"]},
+            },
+            {
+                "id": "vendor/image-model",
+                "name": "Vendor Image Model",
+                "architecture": {"output_modalities": ["image"]},
+            },
+        ]
+    }
+
+    with patch("src.summarizer.summarizer.requests.get", return_value=response) as mock_get:
+        models, source = get_model_catalog("openrouter", "secret")
+
+    assert models == [{"id": "vendor/text-model", "name": "Vendor Text Model"}]
+    assert source == "openrouter-user"
+    assert mock_get.call_args.args[0].endswith("/models/user")
+    assert mock_get.call_args.kwargs["headers"] == {"Authorization": "Bearer secret"}
+
+
+def test_openrouter_catalog_falls_back_when_api_fails():
+    """OpenRouter 모델 API 장애 시에도 최신 기본 목록을 제공한다."""
+    import requests
+
+    from src.summarizer.summarizer import get_model_catalog
+
+    with patch("src.summarizer.summarizer.requests.get", side_effect=requests.Timeout):
+        models, source = get_model_catalog("openrouter")
+
+    assert source == "fallback"
+    assert any(model["id"] == "openrouter/auto" for model in models)
 
 
 def test_summarize_openai_empty_response_raises():

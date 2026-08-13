@@ -135,7 +135,7 @@ def run_settings() -> None:
         if api_key:
             # 2.2. Gemini 모델 선택
             _print_section("2.2. Gemini 모델 선택")
-            console.print("  [dim]무료 티어 모델 사용 권장 (기본값: gemini-2.5-flash)[/dim]")
+            console.print(f"  [dim]고속·저비용 모델 권장 (기본값: {GEMINI_DEFAULT_MODEL})[/dim]")
             console.print()
             for i, label in enumerate(GEMINI_MODEL_LABELS, 1):
                 console.print(f"  [bold]{i}.[/bold] {label}")

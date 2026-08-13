@@ -10,7 +10,31 @@ function autoResizeTextarea(el) {
   el.style.height = el.scrollHeight + 'px';
 }
 
-const AI_MODEL_DEFAULTS = { GEMINI_MODEL: 'gemini-2.5-flash', OPENAI_MODEL: 'gpt-4o-mini', OPENROUTER_MODEL: 'openai/gpt-4o-mini' };
+const AI_MODEL_DEFAULTS = {
+  GEMINI_MODEL: 'gemini-3.5-flash-lite',
+  OPENAI_MODEL: 'gpt-5.6-luna',
+  OPENROUTER_MODEL: 'openrouter/auto',
+};
+
+async function loadAiModelCatalog() {
+  const catalog = await api('GET', '/api/settings/ai-models', null, 15000);
+  Object.entries(catalog.providers || {}).forEach(([agent, provider]) => {
+    const list = $(`#${agent}-model-list`);
+    if (!list) return;
+    list.replaceChildren(...(provider.models || []).map(model => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.label = model.name;
+      return option;
+    }));
+    const status = $(`[data-model-status="${agent}"]`);
+    if (!status) return;
+    const count = provider.models?.length || 0;
+    status.textContent = agent === 'openrouter'
+      ? `OpenRouter 사용 가능 텍스트 모델 ${count}개 · 모델 ID 직접 입력 가능`
+      : `2026년 8월 기준 ${count}개 · 모델 ID 직접 입력 가능`;
+  });
+}
 
 function applyAiAgentVisibility(form = $('#settings-form')) {
   if (!form) return;
@@ -79,7 +103,10 @@ export async function loadAppSettings() {
 // ═══════════════════════════════════════════════════════════════
 export async function loadSettings() {
   try {
-    const s = await loadAppSettings();
+    const [s] = await Promise.all([
+      loadAppSettings(),
+      loadAiModelCatalog().catch(() => null),
+    ]);
     const form = $('#settings-form');
 
     Object.entries(s).forEach(([key, val]) => {

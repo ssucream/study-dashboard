@@ -6,11 +6,26 @@ from pydantic import BaseModel
 from src import db, event_log
 from src.config import Config, normalize_download_rule
 from src.crypto import encrypt
-from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT
+from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog
 
 router = APIRouter()
 
 _SENSITIVE = {"GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"}
+
+
+@router.get("/ai-models")
+async def get_ai_models():
+    """2026-08 기준 카탈로그와 OpenRouter 실시간 사용 가능 모델을 반환한다."""
+    require_auth()
+    import asyncio
+
+    providers = {}
+    for agent in ("gemini", "openai"):
+        models, source = get_model_catalog(agent)
+        providers[agent] = {"models": models, "source": source}
+    models, source = await asyncio.to_thread(get_model_catalog, "openrouter", Config.OPENROUTER_API_KEY or "")
+    providers["openrouter"] = {"models": models, "source": source}
+    return {"as_of": "2026-08", "providers": providers}
 
 
 @router.get("")

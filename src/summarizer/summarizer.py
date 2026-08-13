@@ -7,6 +7,8 @@ STT로 생성된 .txt 파일을 Gemini / OpenAI / OpenRouter API로 요약한다
 
 from pathlib import Path
 
+import requests
+
 DEFAULT_SUMMARY_PROMPT = """\
 당신은 대학교 강의 내용을 정리하는 전문 학습 보조 AI입니다.
 아래는 강의를 음성 인식(STT)으로 변환한 텍스트입니다. STT 특성상 오탈자나 문장이 부자연스러운 부분이 있을 수 있으니 문맥을 고려해 이해해 주세요.
@@ -63,10 +65,14 @@ _CHAPEL_EXTRA_PROMPT = """\
 """
 
 _GEMINI_MODELS = [
-    ("gemini-2.5-flash", "Gemini 2.5 Flash  (무료 티어 지원, 권장)"),
-    ("gemini-2.0-flash", "Gemini 2.0 Flash  (무료 티어 지원)"),
-    ("gemini-1.5-flash", "Gemini 1.5 Flash  (무료 티어 지원)"),
-    ("gemini-1.5-pro", "Gemini 1.5 Pro    (유료)"),
+    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite  (고속·저비용, 권장)"),
+    ("gemini-3.6-flash", "Gemini 3.6 Flash  (최신 안정)"),
+    ("gemini-3.5-flash", "Gemini 3.5 Flash"),
+    ("gemini-3.1-pro-preview", "Gemini 3.1 Pro  (Preview)"),
+    ("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+    ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+    ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+    ("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
 ]
 
 # 외부에서 모델 목록 참조용
@@ -75,11 +81,17 @@ GEMINI_MODEL_LABELS = [m[1] for m in _GEMINI_MODELS]
 GEMINI_DEFAULT_MODEL = GEMINI_MODEL_IDS[0]
 
 _OPENAI_MODELS = [
-    ("gpt-4o-mini", "GPT-4o mini  (저렴, 권장)"),
-    ("gpt-4o", "GPT-4o"),
-    ("gpt-4.1-mini", "GPT-4.1 mini"),
-    ("gpt-4.1", "GPT-4.1"),
-    ("o3-mini", "o3-mini  (추론 특화)"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna  (고속·저비용, 권장)"),
+    ("gpt-5.6-terra", "GPT-5.6 Terra  (균형)"),
+    ("gpt-5.6-sol", "GPT-5.6 Sol  (최고 성능)"),
+    ("gpt-5.6", "GPT-5.6  (Sol 최신 별칭)"),
+    ("gpt-5.5", "GPT-5.5"),
+    ("gpt-5.4-mini", "GPT-5.4 mini"),
+    ("gpt-5.4-nano", "GPT-5.4 nano  (최저 비용)"),
+    ("gpt-5.4", "GPT-5.4"),
+    ("gpt-5-mini", "GPT-5 mini"),
+    ("gpt-5-nano", "GPT-5 nano"),
+    ("gpt-4.1-mini", "GPT-4.1 mini  (레거시)"),
 ]
 
 OPENAI_MODEL_IDS = [m[0] for m in _OPENAI_MODELS]
@@ -87,11 +99,15 @@ OPENAI_MODEL_LABELS = [m[1] for m in _OPENAI_MODELS]
 OPENAI_DEFAULT_MODEL = OPENAI_MODEL_IDS[0]
 
 _OPENROUTER_MODELS = [
-    ("openai/gpt-4o-mini", "OpenAI GPT-4o mini  (권장)"),
-    ("anthropic/claude-3.5-sonnet", "Anthropic Claude 3.5 Sonnet"),
-    ("google/gemini-2.0-flash-001", "Google Gemini 2.0 Flash"),
-    ("meta-llama/llama-3.3-70b-instruct", "Meta Llama 3.3 70B"),
-    ("deepseek/deepseek-chat", "DeepSeek Chat"),
+    ("openrouter/auto", "OpenRouter Auto Router  (권장)"),
+    ("~openai/gpt-mini-latest", "OpenAI GPT Mini Latest"),
+    ("~openai/gpt-latest", "OpenAI GPT Latest"),
+    ("google/gemini-3.5-flash-lite", "Google Gemini 3.5 Flash-Lite"),
+    ("anthropic/claude-fable-5", "Anthropic Claude Fable 5"),
+    ("openai/gpt-5.6-luna", "OpenAI GPT-5.6 Luna"),
+    ("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash"),
+    ("x-ai/grok-4.6", "xAI Grok 4.6"),
+    ("openrouter/free", "OpenRouter Free Models Router"),
 ]
 
 OPENROUTER_MODEL_IDS = [m[0] for m in _OPENROUTER_MODELS]
@@ -104,6 +120,41 @@ AI_AGENTS = [
     ("openai", "OpenAI", OPENAI_MODEL_IDS, OPENAI_MODEL_LABELS, OPENAI_DEFAULT_MODEL),
     ("openrouter", "OpenRouter", OPENROUTER_MODEL_IDS, OPENROUTER_MODEL_LABELS, OPENROUTER_DEFAULT_MODEL),
 ]
+
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+
+
+def get_model_catalog(agent: str, api_key: str = "") -> tuple[list[dict[str, str]], str]:
+    """AI 설정 UI에 보여줄 텍스트 생성 모델 목록을 반환한다."""
+    if agent == "gemini":
+        return [{"id": model_id, "name": label} for model_id, label in _GEMINI_MODELS], "curated"
+    if agent == "openai":
+        return [{"id": model_id, "name": label} for model_id, label in _OPENAI_MODELS], "curated"
+    if agent != "openrouter":
+        raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
+
+    fallback = [{"id": model_id, "name": label} for model_id, label in _OPENROUTER_MODELS]
+    url = f"{OPENROUTER_MODELS_URL}/user" if api_key else OPENROUTER_MODELS_URL
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = requests.get(url, params={"output_modalities": "text"}, headers=headers, timeout=10)
+        response.raise_for_status()
+        catalog = []
+        seen = set()
+        for item in response.json().get("data", []):
+            model_id = str(item.get("id") or "").strip()
+            if not model_id or model_id in seen:
+                continue
+            output_modalities = (item.get("architecture") or {}).get("output_modalities") or ["text"]
+            if "text" not in output_modalities:
+                continue
+            seen.add(model_id)
+            catalog.append({"id": model_id, "name": str(item.get("name") or model_id)})
+        if catalog:
+            return catalog, "openrouter-user" if api_key else "openrouter-public"
+    except (requests.RequestException, TypeError, ValueError):
+        pass
+    return fallback, "fallback"
 
 
 def summarize(
@@ -185,13 +236,10 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
         raise RuntimeError("google-genai 패키지가 설치되어 있지 않습니다.\n설치: pip install google-genai") from None
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
+    config = types.GenerateContentConfig()
+    if not model.startswith("gemini-3"):
+        config.thinking_config = types.ThinkingConfig(thinking_budget=0)
+    response = client.models.generate_content(model=model, contents=prompt, config=config)
     if not response.text:
         finish_reason = None
         if response.candidates:

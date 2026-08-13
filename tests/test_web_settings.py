@@ -201,3 +201,19 @@ async def test_get_settings_returns_summary_prompt_default():
 
     assert payload["SUMMARY_PROMPT_DEFAULT"] == DEFAULT_SUMMARY_PROMPT
     assert payload["SUMMARY_PROMPT_TEMPLATE"] == DEFAULT_SUMMARY_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_get_ai_models_returns_curated_and_live_catalogs(monkeypatch):
+    def fake_catalog(agent, api_key=""):
+        return ([{"id": f"{agent}/latest", "name": f"{agent} latest"}], "live" if api_key else "curated")
+
+    monkeypatch.setattr(Config, "OPENROUTER_API_KEY", "stored-key")
+    monkeypatch.setattr(settings_route, "get_model_catalog", fake_catalog)
+
+    payload = await settings_route.get_ai_models()
+
+    assert payload["as_of"] == "2026-08"
+    assert payload["providers"]["gemini"]["models"][0]["id"] == "gemini/latest"
+    assert payload["providers"]["openrouter"]["models"][0]["id"] == "openrouter/latest"
+    assert payload["providers"]["openrouter"]["source"] == "live"

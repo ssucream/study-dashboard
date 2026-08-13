@@ -2,6 +2,30 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.8.1] - 2026-08-13
+
+### Changed
+
+- **AI 요약 모델 카탈로그 최신화**: 2026년 8월 공식 모델 기준으로 Gemini와 OpenAI 선택 목록을 갱신
+  - Gemini: 종료된 1.5/2.0 계열을 제거하고 3.6 Flash, 3.5 Flash/Flash-Lite, 3.1 Pro 등을 추가
+  - OpenAI: GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4 계열 등을 추가
+  - 기본 모델을 요약 워크로드에 적합한 `gemini-3.5-flash-lite`, `gpt-5.6-luna`, `openrouter/auto`로 변경
+- **모델 선택 UI 개선**: 고정 드롭다운을 검색·직접 입력 가능한 모델 ID 필드로 변경해 신규 모델을 즉시 사용 가능
+- **OpenRouter 실시간 카탈로그**: 공식 Models API에서 텍스트 모델 전체를 조회하고, 저장된 API 키가 있으면 계정의 provider 선호·개인정보 정책·가드레일을 반영한 `/models/user` 결과를 사용
+- **Gemini 3.x 호환성**: 3.x 모델에서 지원하지 않는 `thinking_budget=0` 설정을 제외해 요약 요청 실패 방지
+
+### Fixed
+
+- OpenRouter에서 실제 사용 가능한 모델이 수백 개임에도 설정 화면에 5개만 노출되던 문제 수정
+- OpenRouter Models API 장애 시에도 최신 기본 목록과 직접 입력을 사용할 수 있도록 fallback 추가
+
+### Tests
+
+- 최신 모델 ID, OpenRouter 계정 필터 API, 장애 fallback, 웹 카탈로그 route 회귀 테스트 추가
+- 전체 132/132 통과, Ruff lint/format 및 프론트엔드 JavaScript 문법 검사 통과
+
+---
+
 ## [v26.8.0] - 2026-08-07
 
 ### AI 요약 provider 다중 지원 (Gemini/OpenAI/OpenRouter) · 릴리즈 프로세스 정리

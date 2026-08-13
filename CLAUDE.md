@@ -130,11 +130,11 @@ CREATE TABLE settings (
 | `WHISPER_MODEL` | faster-whisper 모델 | `tiny` / `base` / `small` / `medium` / `large` |
 | `AI_ENABLED` | AI 요약 사용 여부 | `true` / `false` |
 | `AI_AGENT` | AI 요약 provider | `gemini` / `openai` / `openrouter` |
-| `GEMINI_MODEL` | Gemini 모델 ID | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Gemini 모델 ID | `gemini-3.5-flash-lite` |
 | `GOOGLE_API_KEY` | Gemini API 키 (암호화) | — |
-| `OPENAI_MODEL` | OpenAI 모델 ID | `gpt-4o-mini` |
+| `OPENAI_MODEL` | OpenAI 모델 ID | `gpt-5.6-luna` |
 | `OPENAI_API_KEY` | OpenAI API 키 (암호화) | — |
-| `OPENROUTER_MODEL` | OpenRouter 모델 ID | `openai/gpt-4o-mini` |
+| `OPENROUTER_MODEL` | OpenRouter 모델 ID | `openrouter/auto` |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 (암호화) | — |
 | `SUMMARY_PROMPT_EXTRA` | 요약 프롬프트 추가 지시 | — |
 | `TELEGRAM_ENABLED` | 텔레그램 알림 사용 여부 | `true` / `false` |
