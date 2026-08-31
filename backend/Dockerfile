@@ -22,8 +22,8 @@ COPY src/ ./src/
 COPY backend/ ./backend/
 COPY CHANGELOG.md ./
 
-RUN mkdir -p /download \
-    && mkdir -p /data/downloads \
+RUN mkdir -p /downloads \
+    && mkdir -p /db \
     && mkdir -p /root/.cache/huggingface \
     && mkdir -p /root/.cache/ms-playwright
 

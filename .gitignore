@@ -4,12 +4,12 @@
 .secret_key
 
 # Downloads & generated data
-data/*
-!data/.gitkeep
 db/*
 !db/.gitkeep
 downloads/*
 !downloads/.gitkeep
+# 앱은 항상 downloads/ 를 사용한다. download/(단수)는 구버전·수동 조작으로 생긴 잔재.
+download/
 
 # Logs
 logs/*
@@ -20,6 +20,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .venv/
+.venv-*/
 venv/
 *.egg-info/
 dist/

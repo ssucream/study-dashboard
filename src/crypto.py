@@ -10,6 +10,7 @@
 import logging
 import os
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _PREFIX = "enc:"
 _KEY_PATH = Path(__file__).parent.parent / ".secret_key"
+_dir_warning_emitted = False
 
 
 def _resolve_key_path() -> Path:
@@ -26,7 +28,15 @@ def _resolve_key_path() -> Path:
     Docker 바인드 마운트 시 호스트에 파일이 없으면 .secret_key가 디렉토리로
     생성되므로, 그 경우 디렉토리 내부의 key 파일을 사용한다.
     """
+    global _dir_warning_emitted
     if _KEY_PATH.is_dir():
+        if not _dir_warning_emitted:
+            logger.warning(
+                ".secret_key가 파일이 아닌 디렉토리입니다 (Docker 볼륨 마운트로 추정). "
+                "키를 %s/key 에 저장합니다. 호스트에서 해당 경로를 유지해야 복호화가 가능합니다.",
+                _KEY_PATH,
+            )
+            _dir_warning_emitted = True
         return _KEY_PATH / "key"
     return _KEY_PATH
 
@@ -39,13 +49,6 @@ def _load_or_create_key() -> bytes:
     Docker 볼륨 마운트 시 .secret_key가 디렉토리로 생성될 수 있으므로
     디렉토리인 경우 내부의 key 파일을 사용한다.
     """
-    if _KEY_PATH.is_dir():
-        logger.warning(
-            ".secret_key가 파일이 아닌 디렉토리입니다 (Docker 볼륨 마운트로 추정). "
-            "키를 %s/key 에 저장합니다. 호스트에서 해당 경로를 유지해야 복호화가 가능합니다.",
-            _KEY_PATH,
-        )
-
     key_file = _resolve_key_path()
 
     if key_file.exists() and key_file.is_file():
@@ -73,8 +76,18 @@ def _load_or_create_key() -> bytes:
     return key
 
 
-def _fernet() -> Fernet:
+@lru_cache(maxsize=8)
+def _fernet_for(key_file_str: str) -> Fernet:
+    """키 파일 경로별로 Fernet 인스턴스를 캐시한다.
+
+    암호화/복호화가 호출될 때마다 키 파일을 디스크에서 다시 읽지 않도록 한다.
+    경로를 캐시 키로 삼아 테스트에서 _KEY_PATH를 바꿔치기해도 격리가 유지된다.
+    """
     return Fernet(_load_or_create_key())
+
+
+def _fernet() -> Fernet:
+    return _fernet_for(str(_resolve_key_path()))
 
 
 def encrypt(plaintext: str) -> str:

@@ -1,6 +1,6 @@
 """SQLite 기반 설정 저장소.
 
-data/app.db (Docker: /data/app.db) 에 key-value 방식으로 설정을 저장한다.
+db/app.db (Docker: /db/app.db) 에 key-value 방식으로 설정을 저장한다.
 민감값은 호출 쪽에서 crypto.py로 암호화한 뒤 전달해야 한다.
 
 테이블 생성은 _connect() 내부에서 자동으로 수행되므로 별도 init() 호출 없이도

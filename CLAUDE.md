@@ -90,9 +90,9 @@ study-helper/
 │       ├── player.py                     # 재생 진행 화면
 │       ├── download.py                   # 다운로드 진행 화면
 │       └── settings.py                   # 초기 설정 화면
-└── data/
-    ├── app.db                            # 설정 DB (볼륨 마운트)
-    └── downloads/                        # 다운로드 파일 (볼륨 마운트)
+├── db/
+│   └── app.db                           # 설정 DB (호스트 ./db → 컨테이너 /db 볼륨 마운트)
+└── downloads/                            # 다운로드 파일 (호스트 ./downloads → 컨테이너 /downloads 볼륨 마운트)
 ```
 
 ## 설정 DB 스키마 (SQLite)
@@ -173,6 +173,7 @@ CREATE TABLE settings (
 아래 항목은 `.gitignore`에 등록되어 있음. 커밋 전 `git status`로 반드시 확인.
 
 - `.secret_key` — 암호화 키. **절대 커밋 금지**
-- `data/` — DB 및 다운로드 파일. **절대 커밋 금지**
+- `db/` — 설정 DB(`app.db`). **절대 커밋 금지** (`db/.gitkeep`만 추적)
+- `downloads/` — 다운로드/변환/요약 산출물. **절대 커밋 금지** (`downloads/.gitkeep`만 추적)
 
 **민감 정보 처리**: 학번/비밀번호는 자동 로그인을 방지하기 위해 DB에 저장하지 않고 현재 프로세스 메모리에만 유지한다. API 키와 텔레그램 토큰은 `crypto.py`로 암호화되어 DB에 저장되며 평문으로 저장되지 않는다.

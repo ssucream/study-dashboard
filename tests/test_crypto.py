@@ -96,6 +96,40 @@ def test_concurrent_key_creation_is_consistent(tmp_path):
     assert len(set(results)) == 1  # 모든 스레드가 동일한 키를 사용해야 함
 
 
+def test_directory_key_path_warns_once(tmp_path, caplog):
+    """회귀 테스트: .secret_key가 디렉토리일 때 경고는 매 암복호화가 아니라 1회만 남겨야 한다."""
+    key_dir = tmp_path / ".secret_key"
+    key_dir.mkdir()
+
+    import src.crypto as crypto
+
+    with patch("src.crypto._KEY_PATH", key_dir):
+        crypto._dir_warning_emitted = False
+        crypto._fernet_for.cache_clear()
+        with caplog.at_level("WARNING"):
+            encrypted = crypto.encrypt("secret")
+            for _ in range(5):
+                assert crypto.decrypt(encrypted) == "secret"
+
+    dir_warnings = [r for r in caplog.records if "디렉토리입니다" in r.message]
+    assert len(dir_warnings) == 1
+    crypto._fernet_for.cache_clear()
+
+
+def test_fernet_instance_is_cached_per_path(tmp_path):
+    """회귀 테스트: 같은 키 경로에서는 Fernet 인스턴스를 재사용해 디스크 재읽기를 피해야 한다."""
+    key_file = tmp_path / ".secret_key"
+
+    import src.crypto as crypto
+
+    with patch("src.crypto._KEY_PATH", key_file):
+        crypto._fernet_for.cache_clear()
+        first = crypto._fernet()
+        second = crypto._fernet()
+        assert first is second
+    crypto._fernet_for.cache_clear()
+
+
 def test_decrypt_invalid_token_logs_warning(tmp_path, caplog):
     """회귀 테스트: 복호화 실패(InvalidToken)는 조용히 넘어가지 말고 경고 로그를 남겨야 한다."""
     key_file_1 = tmp_path / "key1"

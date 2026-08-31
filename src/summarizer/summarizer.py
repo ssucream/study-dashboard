@@ -9,6 +9,10 @@ from pathlib import Path
 
 import requests
 
+# 요약 1건에 허용하는 최대 대기 시간(초). 긴 전사본이라도 이 안에 끝나야 하며,
+# 초과 시 executor 스레드를 무한정 붙잡지 않도록 명시적으로 끊는다.
+_SUMMARY_REQUEST_TIMEOUT = 300
+
 DEFAULT_SUMMARY_PROMPT = """\
 당신은 대학교 강의 내용을 정리하는 전문 학습 보조 AI입니다.
 아래는 강의를 음성 인식(STT)으로 변환한 텍스트입니다. STT 특성상 오탈자나 문장이 부자연스러운 부분이 있을 수 있으니 문맥을 고려해 이해해 주세요.
@@ -235,7 +239,10 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
     except ImportError:
         raise RuntimeError("google-genai 패키지가 설치되어 있지 않습니다.\n설치: pip install google-genai") from None
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=_SUMMARY_REQUEST_TIMEOUT * 1000),  # ms 단위
+    )
     config = types.GenerateContentConfig()
     if not model.startswith("gemini-3"):
         config.thinking_config = types.ThinkingConfig(thinking_budget=0)
@@ -268,7 +275,7 @@ def _summarize_openai_compatible(
     except ImportError:
         raise RuntimeError("openai 패키지가 설치되어 있지 않습니다.\n설치: pip install openai") from None
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=_SUMMARY_REQUEST_TIMEOUT)
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],

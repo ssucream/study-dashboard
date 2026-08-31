@@ -2,6 +2,36 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.8.2] - 2026-08-31
+
+### Fixed
+
+- **`.secret_key` 경고 로그 도배**: Docker 바인드 마운트로 `.secret_key`가 디렉토리로 생성된 환경에서,
+  암호화/복호화가 호출될 때마다 "디렉토리입니다" 경고가 찍혀 설정 저장 1회당 4줄씩 로그가 쌓이던 문제 수정
+  (`src/crypto.py`) — 경고는 프로세스당 1회만 출력하도록 변경
+
+### Changed
+
+- **Fernet 키 캐싱**: `encrypt`/`decrypt` 마다 `.secret_key` 파일을 디스크에서 다시 읽던 것을
+  경로별 `lru_cache`로 프로세스당 1회만 로드하도록 개선 (`src/crypto.py`)
+- **요약 API 요청 타임아웃 명시**: Gemini/OpenAI/OpenRouter 클라이언트에 300초 타임아웃을 지정해,
+  응답이 지연되는 provider가 요약 작업 스레드를 무한정 점유하지 못하도록 방지 (`src/summarizer/summarizer.py`)
+
+### Internal
+
+- **`data/` 경로 잔재 정리**: 설정 DB·다운로드 경로가 `db/`·`downloads/`로 전환된 뒤에도 남아 있던
+  구버전 `data/app.db`와 빈 `data/` 디렉토리 제거, 관련 문서·주석의 경로 표기 정정
+  (`src/db.py` docstring, `backend/Dockerfile`의 `mkdir` 경로, `CLAUDE.md` 프로젝트 구조·보안 주의사항)
+- `.gitignore`: 앱이 사용하지 않는 stray `download/`(단수) 디렉토리와 로컬 dev 가상환경(`.venv-*/`) 추가,
+  더 이상 존재하지 않는 `data/*` 규칙 제거, `db/.gitkeep`·`downloads/.gitkeep` 추적 시작
+
+### Tests
+
+- `.secret_key` 디렉토리 경고 1회 출력, Fernet 인스턴스 경로별 캐시 재사용 회귀 테스트 추가
+- 전체 134/134 통과, Ruff lint/format 통과
+
+---
+
 ## [v26.8.1] - 2026-08-13
 
 ### Changed
