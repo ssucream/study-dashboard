@@ -104,39 +104,97 @@ study-dashboard/
 | 항목 | 설명 |
 |------|------|
 | 숭실대 Learning X 계정 | 학번 + 비밀번호 |
-| Docker | 컨테이너 실행 환경 |
-| AI 요약 API 키 | AI 요약 사용 시 필요 |
+| Docker | 컨테이너 실행 환경 (Docker Desktop 등) |
+| OpenSSL | 로컬 HTTPS 인증서 생성용 (대부분 OS에 기본 설치) |
+| AI 요약 API 키 | AI 요약 사용 시 필요 (Gemini / OpenAI / OpenRouter) |
 
 ---
 
 ## 설치 및 실행
 
-### 1. 저장소 클론
+미리 빌드된 이미지를 Docker Hub에서 받아 실행합니다. **저장소를 클론할 필요가 없습니다.**
+릴리즈에 첨부된 `docker-compose.yml` 한 파일만 있으면 됩니다.
+
+### 1. 작업 폴더 생성 + compose 파일 다운로드
+
+```bash
+mkdir study-dashboard && cd study-dashboard
+
+curl -LO https://github.com/HelloJamong/study-dashboard/releases/latest/download/docker-compose.yml
+```
+
+> `curl`이 없으면 [최신 릴리즈 페이지](https://github.com/HelloJamong/study-dashboard/releases/latest)에서
+> `docker-compose.yml`을 직접 내려받아 이 폴더에 두면 됩니다.
+
+### 2. 로컬 HTTPS 인증서 생성 (최초 1회)
+
+브라우저 접속용 자체 서명 인증서를 만듭니다.
+
+```bash
+mkdir -p certs
+openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
+  -keyout certs/local.key -out certs/local.crt \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+### 3. 실행
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### 4. 접속
+
+브라우저에서 **<https://localhost:3443>** 으로 접속합니다.
+자체 서명 인증서라 브라우저가 경고를 띄우므로 "고급 → 계속 진행"으로 넘어갑니다.
+
+Learning X 계정으로 로그인한 뒤, 계정·AI 요약 API 키·다운로드/STT/텔레그램 옵션은
+웹 대시보드의 **설정** 화면에서 저장합니다.
+
+> `http://localhost:3000` 으로 접속하면 자동으로 HTTPS(`3443`)로 리다이렉트됩니다.
+> 백엔드 API(`127.0.0.1:8000`)는 로컬 헬스체크용으로만 노출되며 브라우저 트래픽은 nginx HTTPS를 거칩니다.
+
+설정값·다운로드 파일·암호화 키·인증서는 실행 폴더의
+`db/`, `downloads/`, `logs/`, `.secret_key`, `certs/` 에 저장되어
+컨테이너를 내렸다 올려도 보존됩니다.
+
+### 업데이트 / 중지
+
+```bash
+docker compose pull && docker compose up -d   # 최신 버전으로 업데이트
+docker compose down                           # 중지 (데이터 보존)
+docker compose down -v                         # 중지 + 캐시 볼륨까지 제거
+```
+
+---
+
+## 개발자용 — 소스 빌드로 실행
+
+소스를 직접 수정하며 개발할 때는 저장소를 클론한 뒤, `docker-compose.yml`의 `image:` 줄을
+지우고 바로 아래 주석 처리된 `build:` 섹션(및 소스 볼륨 마운트)의 주석을 해제합니다.
 
 ```bash
 git clone https://github.com/HelloJamong/study-dashboard.git
 cd study-dashboard
-```
-
-### 2. 실행
-
-```bash
+./scripts/generate-local-cert.sh          # HTTPS 인증서 생성
+# docker-compose.yml에서 image: → build: 로 교체하고 소스 볼륨 마운트 주석 해제 후
 docker compose up --build
 ```
 
-브라우저에서 `http://localhost:3000` 접속 후 Learning X 계정으로 로그인합니다.
-계정, AI 요약 API 키, 다운로드/STT/텔레그램 옵션은 웹 대시보드의 **설정** 화면에서 저장합니다.
+접속 주소는 배포용과 동일하게 **<https://localhost:3443>** 입니다.
 
 ---
 
 ## 설정 저장소
 
-이 프로젝트는 `.env` 파일을 사용하지 않습니다. 설정은 SQLite DB(`data/app.db`)에 저장됩니다.
+이 프로젝트는 `.env` 파일을 사용하지 않습니다. 설정은 SQLite DB(`db/app.db`)에 저장됩니다.
 학번/비밀번호는 자동 로그인 방지를 위해 DB에 저장하지 않고 현재 세션 메모리에만 유지하며,
 API 키/텔레그램 토큰은 암호화되어 DB에 저장됩니다.
 
-Docker 실행 시 다운로드 경로는 컨테이너 `/download`로 고정됩니다.
-기본 compose 설정은 저장소의 `./download` 폴더를 컨테이너 `/download`에 마운트합니다.
+Docker 실행 시 다운로드 경로는 컨테이너 `/downloads`로 고정됩니다.
+기본 compose 설정은 실행 폴더의 `./downloads` 폴더를 컨테이너 `/downloads`에 마운트합니다.
 
 ### Whisper 모델 크기
 
