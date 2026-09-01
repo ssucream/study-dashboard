@@ -77,22 +77,26 @@ def test_concurrent_key_creation_is_consistent(tmp_path):
     key_file = tmp_path / ".secret_key"
     results: list[bytes] = []
     lock = threading.Lock()
+    n = 16
+    barrier = threading.Barrier(n)
 
     with patch("src.crypto._KEY_PATH", key_file):
         from src.crypto import _load_or_create_key
 
         def worker():
+            barrier.wait()  # 모든 스레드를 동시에 출발시켜 생성 경쟁을 강제한다
             key = _load_or_create_key()
             with lock:
                 results.append(key)
 
-        threads = [threading.Thread(target=worker) for _ in range(8)]
+        threads = [threading.Thread(target=worker) for _ in range(n)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
-    assert len(results) == 8
+    assert len(results) == n
+    assert b"" not in results  # 생성 직후·쓰기 전 빈 키를 읽으면 안 됨
     assert len(set(results)) == 1  # 모든 스레드가 동일한 키를 사용해야 함
 
 

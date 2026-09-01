@@ -109,6 +109,19 @@ async def login(req: LoginRequest):
         message="웹 로그인 성공",
     )
 
+    # 백엔드 재시작 등으로 세션이 끊겼지만 자동 모드가 켜져 있던 상태였다면 재개한다.
+    with suppress(Exception):
+        from backend.api.routes.auto import resume_persisted_auto
+
+        if resume_persisted_auto():
+            event_log.record_event(
+                event_type="auto",
+                action="resume",
+                status="success",
+                actor_user_id=event_log.mask_user_id(req.user_id),
+                message="백엔드 재시작 후 자동 모드 자동 재개",
+            )
+
     return {"success": True, "user_id": req.user_id}
 
 
@@ -150,6 +163,9 @@ async def logout():
     from src.config import Config
 
     Config.clear_session_credentials()
+    # 명시적 로그아웃은 사용자 의사이므로 재로그인 시 자동 모드를 복원하지 않는다.
+    with suppress(Exception):
+        Config.save_auto_state(False)
 
     event_log.record_event(
         event_type="auth",

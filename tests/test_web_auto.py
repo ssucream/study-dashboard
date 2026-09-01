@@ -35,8 +35,11 @@ def _reset_app_state() -> None:
 @pytest.fixture(autouse=True)
 def reset_state(monkeypatch, tmp_path):
     import src.db as db_module
+    from src.config import Config
 
     monkeypatch.setattr(db_module, "_db_path", lambda: tmp_path / "app.db")
+    monkeypatch.setattr(Config, "AUTO_ENABLED", "false")
+    monkeypatch.setattr(Config, "AUTO_SCHEDULE_HOURS", "")
     _reset_app_state()
     yield
     _reset_app_state()
@@ -103,3 +106,46 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
 
 async def _noop(*args, **kwargs):
     pass
+
+
+@pytest.mark.asyncio
+async def test_auto_start_persists_state_to_db(monkeypatch):
+    """자동 모드 시작 시 활성 상태·스케줄을 DB에 저장해 백엔드 재시작 후 복원 가능하게 한다."""
+    import src.db as db_module
+    from src.config import Config
+
+    app_state.scraper = object()
+    monkeypatch.setattr(auto_route, "_launch_auto_loop", lambda hours: "task-123")
+
+    result = await auto_route.auto_start(auto_route.AutoStartRequest(schedule_hours=[8, 20]))
+
+    assert result["started"] is True
+    assert Config.AUTO_ENABLED == "true"
+    assert db_module.get("AUTO_ENABLED") == "true"
+    assert db_module.get("AUTO_SCHEDULE_HOURS") == "8,20"
+
+
+@pytest.mark.asyncio
+async def test_auto_stop_persists_disabled_state(monkeypatch):
+    """자동 모드 명시적 중지 시 DB 지속 상태를 꺼서 재로그인해도 복원되지 않게 한다."""
+    import src.db as db_module
+    from src.config import Config
+
+    app_state.scraper = object()
+    Config.save_auto_state(True, [9, 13])
+
+    await auto_route.auto_stop()
+
+    assert Config.AUTO_ENABLED == "false"
+    assert db_module.get("AUTO_ENABLED") == "false"
+
+
+def test_get_auto_schedule_hours_parses_and_falls_back():
+    from src.config import Config
+
+    Config.AUTO_SCHEDULE_HOURS = "23,9,13"
+    assert Config.get_auto_schedule_hours() == [9, 13, 23]
+    Config.AUTO_SCHEDULE_HOURS = ""
+    assert Config.get_auto_schedule_hours() == [9, 13, 18, 23]
+    Config.AUTO_SCHEDULE_HOURS = "99,abc,-1"
+    assert Config.get_auto_schedule_hours() == [9, 13, 18, 23]

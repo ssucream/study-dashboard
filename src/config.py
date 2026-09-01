@@ -108,6 +108,10 @@ class Config:
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     TELEGRAM_AUTO_DELETE: str = ""
+    # 자동 모드 지속 상태 — 백엔드 재시작 후 재로그인 시 자동 모드를 복원하기 위해 DB에 보관.
+    # 사용자가 '자동 모드 중지'나 로그아웃을 하면 false로 저장된다.
+    AUTO_ENABLED: str = ""
+    AUTO_SCHEDULE_HOURS: str = ""
 
     @classmethod
     def load(cls) -> None:
@@ -149,6 +153,8 @@ class Config:
         cls.TELEGRAM_ENABLED = db.get("TELEGRAM_ENABLED", "")
         cls.TELEGRAM_CHAT_ID = db.get("TELEGRAM_CHAT_ID", "")
         cls.TELEGRAM_AUTO_DELETE = db.get("TELEGRAM_AUTO_DELETE", "")
+        cls.AUTO_ENABLED = db.get("AUTO_ENABLED", "false")
+        cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
 
     @classmethod
     def get_ai_api_key(cls, agent: str | None = None) -> str:
@@ -289,6 +295,26 @@ class Config:
                 "TELEGRAM_AUTO_DELETE": cls.TELEGRAM_AUTO_DELETE,
             }
         )
+
+    @classmethod
+    def save_auto_state(cls, enabled: bool, schedule_hours: list[int] | None = None) -> None:
+        """자동 모드 지속 상태를 DB에 저장한다.
+
+        schedule_hours를 넘기면 스케줄도 함께 갱신한다 (자동 모드 시작 시).
+        """
+        cls.AUTO_ENABLED = "true" if enabled else "false"
+        to_save = {"AUTO_ENABLED": cls.AUTO_ENABLED}
+        if schedule_hours is not None:
+            cls.AUTO_SCHEDULE_HOURS = ",".join(str(h) for h in schedule_hours)
+            to_save["AUTO_SCHEDULE_HOURS"] = cls.AUTO_SCHEDULE_HOURS
+        db.set_many(to_save)
+
+    @classmethod
+    def get_auto_schedule_hours(cls) -> list[int]:
+        """저장된 자동 모드 스케줄 시각(시)을 반환한다. 없거나 잘못되면 기본값."""
+        hours = sorted({int(x) for x in (cls.AUTO_SCHEDULE_HOURS or "").split(",") if x.strip().lstrip("-").isdigit()})
+        valid = [h for h in hours if 0 <= h <= 23]
+        return valid or [9, 13, 18, 23]
 
     @classmethod
     def set_session_credentials(cls, user_id: str, password: str) -> None:

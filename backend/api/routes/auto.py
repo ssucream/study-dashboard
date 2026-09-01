@@ -256,8 +256,13 @@ async def _run_auto_cycle() -> None:
             _on_progress(final_state)
 
             if final_state.cancelled:
+                # 사용자가 재생 중 정지 → 자동 모드도 중단하고 지속 상태를 끈다
                 app_state.playback.status = "stopped"
                 app_state.auto.enabled = False
+                with suppress(Exception):
+                    from src.config import Config
+
+                    Config.save_auto_state(False)
                 break
             elif final_state.error:
                 app_state.playback.status = "error"
@@ -333,6 +338,45 @@ async def _auto_loop() -> None:
         app_state.auto.task_id = None
 
 
+def _launch_auto_loop(hours: list[int]) -> str:
+    """자동 모드 백그라운드 루프를 시작하고 task_id를 반환한다.
+
+    라우트(`auto_start`)와 로그인 시 복원(`resume_persisted_auto`) 양쪽에서 재사용한다.
+    """
+    app_state.auto.enabled = True
+    app_state.auto.schedule_hours = hours
+    app_state.auto.processed_count = 0
+    app_state.auto.error = None
+    app_state.auto.next_run_at = ""
+
+    async def run(managed: ManagedTask):
+        managed.update(stage="auto_loop", message="자동 모드가 실행 중입니다.")
+        await _auto_loop()
+        if app_state.auto.error:
+            managed.update(status="failed", stage="error", error=app_state.auto.error)
+        return {"processed_count": app_state.auto.processed_count}
+
+    managed = task_manager.create("auto", run, metadata={"schedule_hours": hours})
+    app_state.auto.task = managed.task
+    app_state.auto.task_id = managed.id
+    return managed.id
+
+
+def resume_persisted_auto() -> bool:
+    """백엔드 재시작 후 로그인 시, DB에 저장된 자동 모드가 켜져 있으면 재개한다.
+
+    재개했으면 True, 아니면(비활성 상태이거나 이미 실행 중) False.
+    """
+    from src.config import Config
+
+    if Config.AUTO_ENABLED != "true":
+        return False
+    if app_state.auto.enabled and app_state.auto.task and not app_state.auto.task.done():
+        return False
+    _launch_auto_loop(Config.get_auto_schedule_hours())
+    return True
+
+
 @router.get("/status")
 async def auto_status():
     require_auth()
@@ -363,26 +407,15 @@ async def auto_start(req: AutoStartRequest):
     if app_state.auto.enabled and app_state.auto.task and not app_state.auto.task.done():
         raise HTTPException(status_code=409, detail="이미 자동 모드가 실행 중입니다.")
 
-    app_state.auto.enabled = True
-    app_state.auto.schedule_hours = hours
-    app_state.auto.processed_count = 0
-    app_state.auto.error = None
-    app_state.auto.next_run_at = ""
+    task_id = _launch_auto_loop(hours)
 
-    async def run(managed: ManagedTask):
-        managed.update(stage="auto_loop", message="자동 모드가 실행 중입니다.")
-        await _auto_loop()
-        if app_state.auto.error:
-            managed.update(status="failed", stage="error", error=app_state.auto.error)
-        return {"processed_count": app_state.auto.processed_count}
-
-    managed = task_manager.create("auto", run, metadata={"schedule_hours": hours})
-    app_state.auto.task = managed.task
-    app_state.auto.task_id = managed.id
-
-    # 미설정 기능 소프트 경고 (시작을 막지는 않음)
     from src.config import Config
 
+    # 백엔드 재시작 후 재로그인 시 복원할 수 있도록 지속 상태를 DB에 저장
+    with suppress(Exception):
+        Config.save_auto_state(True, hours)
+
+    # 미설정 기능 소프트 경고 (시작을 막지는 않음)
     warnings: list[str] = []
     if Config.DOWNLOAD_ENABLED != "true" or Config.AUTO_DOWNLOAD_AFTER_PLAY != "true":
         warnings.append("재생 완료 후 자동 다운로드가 비활성화되어 있어 STT·AI 요약이 실행되지 않습니다.")
@@ -393,7 +426,7 @@ async def auto_start(req: AutoStartRequest):
     if not (Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID):
         warnings.append("텔레그램 알림이 설정되지 않아 진행 상황을 알림으로 받을 수 없습니다.")
 
-    return {"started": True, "schedule_hours": hours, "task_id": managed.id, "warnings": warnings}
+    return {"started": True, "schedule_hours": hours, "task_id": task_id, "warnings": warnings}
 
 
 class AutoScheduleUpdate(BaseModel):
@@ -416,6 +449,13 @@ async def update_schedule(req: AutoScheduleUpdate):
 async def auto_stop():
     require_auth()
     app_state.auto.enabled = False
+
+    # 사용자가 명시적으로 중지 → 재로그인해도 복원하지 않도록 지속 상태를 끈다
+    from src.config import Config
+
+    with suppress(Exception):
+        Config.save_auto_state(False)
+
     if app_state.auto.task_id:
         await task_manager.cancel(app_state.auto.task_id)
     elif app_state.auto.task and not app_state.auto.task.done():

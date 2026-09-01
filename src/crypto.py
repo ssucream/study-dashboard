@@ -41,6 +41,20 @@ def _resolve_key_path() -> Path:
     return _KEY_PATH
 
 
+def _read_key_with_retry(key_file: Path) -> bytes:
+    """키 파일을 읽되, 빈 값이면 짧게 재시도한다.
+
+    다른 스레드/프로세스가 파일을 막 생성(os.open)했지만 아직 쓰기(os.write)를
+    끝내지 않은 순간에 읽으면 빈 바이트가 보일 수 있다. 쓰기가 끝날 때까지 기다린다.
+    """
+    for _ in range(50):
+        data = key_file.read_bytes().strip()
+        if data:
+            return data
+        time.sleep(0.01)
+    return key_file.read_bytes().strip()
+
+
 def _load_or_create_key() -> bytes:
     """
     .secret_key 파일에서 키를 읽거나, 없으면 새로 생성해서 저장한다.
@@ -52,7 +66,8 @@ def _load_or_create_key() -> bytes:
     key_file = _resolve_key_path()
 
     if key_file.exists() and key_file.is_file():
-        return key_file.read_bytes().strip()
+        # 다른 스레드가 생성 직후·쓰기 완료 전이면 빈 값이 보일 수 있으므로 재시도 읽기.
+        return _read_key_with_retry(key_file)
 
     key = Fernet.generate_key()
     try:
@@ -65,14 +80,7 @@ def _load_or_create_key() -> bytes:
             os.close(fd)
     except FileExistsError:
         # 동시에 다른 프로세스/스레드가 먼저 키를 생성함 — 그 키를 사용해야 기존 암호화 값과 정합성이 맞음.
-        # os.open(O_CREAT)와 os.write는 원자적이지 않아서, 파일이 생성된 직후·쓰기가 끝나기 전에
-        # 읽으면 빈 바이트가 보일 수 있다. 쓰기가 끝날 때까지 짧게 재시도한다.
-        for _ in range(50):
-            data = key_file.read_bytes().strip()
-            if data:
-                return data
-            time.sleep(0.01)
-        return key_file.read_bytes().strip()
+        return _read_key_with_retry(key_file)
     return key
 
 
