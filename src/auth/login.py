@@ -103,6 +103,14 @@ async def perform_login(page: Page, username: str, password: str) -> bool:
 
     page.on("dialog", _on_dialog)
     try:
+        # SSU가 추가한 사이트 선택 페이지(canvas-discovery/login.php) 처리:
+        # "숭실대학교"(a.btn-ssu-main)를 눌러 실제 로그인 페이지로 진입한다.
+        site_select = await page.query_selector("a.btn-ssu-main")
+        if site_select:
+            await site_select.click()
+            with suppress(Exception):
+                await page.wait_for_selector(".login_btn a", timeout=_LOGIN_PAGE_TIMEOUT_MS)
+
         login_button = await page.query_selector(".login_btn a")
         if login_button:
             await login_button.click()
