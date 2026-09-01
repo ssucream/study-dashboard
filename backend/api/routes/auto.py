@@ -268,6 +268,49 @@ async def _run_auto_cycle() -> None:
                 app_state.playback.log_path = _write_playback_log(
                     lec.title, lec.full_url, final_state.error, log_buffer
                 )
+                # 재생은 끝났지만 LMS에 출석이 반영되지 않은 경우 — 완료 처리하지 않고
+                # 다음 사이클에 재시도된다. 사용자가 알 수 있도록 로그·알림을 남긴다.
+                if final_state.lms_progress_ratio is not None:
+                    logger.warning(
+                        "출석 미반영: %s / %s — LMS 진도 %.0f%% (다음 사이클 재시도)",
+                        course.long_name,
+                        lec.title,
+                        final_state.lms_progress_ratio * 100,
+                    )
+                    from src import event_log
+
+                    with suppress(Exception):
+                        event_log.record_event(
+                            event_type="player",
+                            action="attendance_not_recorded",
+                            status="failed",
+                            actor_user_id=app_state.user_id or None,
+                            target_type="lecture",
+                            course_id=course.id,
+                            course_name=course.long_name,
+                            lecture_title=lec.title,
+                            week_label=lec.week_label,
+                            error_code="attendance_not_recorded",
+                            error_message=final_state.error,
+                            log_path=app_state.playback.log_path,
+                            metadata={"lms_progress_ratio": round(final_state.lms_progress_ratio, 3)},
+                        )
+                    from src.config import Config
+                    from src.notifier import telegram_notifier
+
+                    if Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID:
+                        loop = asyncio.get_running_loop()
+                        with suppress(Exception):
+                            await loop.run_in_executor(
+                                None,
+                                telegram_notifier.notify_auto_error,
+                                Config.TELEGRAM_BOT_TOKEN,
+                                Config.TELEGRAM_CHAT_ID,
+                                course.long_name,
+                                lec.week_label,
+                                lec.title,
+                                final_state.error,
+                            )
             elif final_state.ended:
                 app_state.playback.status = "completed"
                 updated = _mark_lecture_completed(course.id, lec.full_url)

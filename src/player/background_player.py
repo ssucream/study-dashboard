@@ -13,6 +13,7 @@ LMS가 수강 완료로 인식하도록 실제 재생 시간을 유지한다.
 """
 
 import asyncio
+import contextlib
 import json
 import math
 import re
@@ -32,6 +33,7 @@ _RESTART_BTN = ".confirm-cancel-btn"
 _DIALOG_SEL = ".confirm-msg-box"
 _PLAY_BTN = ".vc-front-screen-play-btn"
 _VIDEO_SEL = "video.vc-vplay-video1"
+_ATTENDANCE_MIN_RATIO = 0.9  # LMS 저장 진도가 이 비율 이상이어야 출석 인정으로 간주
 
 
 @dataclass
@@ -41,6 +43,10 @@ class PlaybackState:
     ended: bool = False
     error: str | None = None
     cancelled: bool = False  # 사용자 중단(CancelledError) 여부 — error 문자열 비교 대신 이 플래그로 판별할 것
+    # LMS 진도 API가 우리 진도 보고를 최소 1회 수락(result:true)했는지 (A안)
+    progress_reported: bool = False
+    # 재생 후 LMS에 실제로 저장된 진도 비율 (B안 검증 결과). None=확인 불가
+    lms_progress_ratio: float | None = None
 
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────────
@@ -268,9 +274,11 @@ async def _report_completion(
     log: Callable,
     commons_frame: Frame | None = None,
     use_page_eval: bool = False,
-):
+) -> bool:
     """
     Plan A/B 완료 후 progress API에 100% 진도를 한 번 직접 보고한다.
+
+    반환: LMS가 진도 보고를 수락(result:true)했으면 True, 아니면 False.
 
     플레이어 JS(uni-player-event.js)가 가짜 WebM 재생 중 progress API를 호출하지
     않는 경우를 대비한 안전망. Plan A가 성공하더라도 항상 호출한다.
@@ -340,7 +348,7 @@ async def _report_completion(
                 body = result.get("b", "")
                 log(f"  [완료 보고] page ctx fetch: {status}  body={body!r}")
                 if status == 200 and '"result":true' in body:
-                    return
+                    return True
                 log(f"  [완료 보고] page ctx fetch 실패 ({status}) — page.request.get으로 폴백")
             except Exception as e:
                 log(f"  [완료 보고] page ctx fetch 오류: {e}")
@@ -352,7 +360,7 @@ async def _report_completion(
                 body = await _call_progress_jsonp(commons_frame, report_url, callback)
                 log(f"  [완료 보고] JSONP 응답: {body[:200]!r}")
                 if '"result":true' in body:
-                    return
+                    return True
                 log("  [완료 보고] JSONP 결과 false — page.request.get으로 폴백")
             except Exception as e:
                 log(f"  [완료 보고] JSONP 실패 ({e}) — page.request.get으로 폴백")
@@ -367,11 +375,109 @@ async def _report_completion(
             body = await response.text()
             log(f"  [완료 보고] request.get 응답: {response.status}  body={body[:200]!r}")
             if '"result":true' in body:
-                return
+                return True
         except Exception as e:
             log(f"  [완료 보고] request.get 실패: {e}")
 
     log("  [완료 보고] 3회 시도 모두 실패 — 출석이 인정되지 않았을 수 있습니다")
+    return False
+
+
+def _extract_watched_seconds(data: dict) -> float | None:
+    """attendance_items API 응답에서 학생이 실제로 시청한(LMS에 저장된) 초를 추출한다.
+
+    LearningX 응답 스키마가 배포마다 다를 수 있어 여러 후보 필드를 순서대로 시도하고,
+    마지막으로 viewer_url의 endat(직전 저장 진도)을 사용한다. 못 찾으면 None.
+    """
+    if not isinstance(data, dict):
+        return None
+    _containers = [
+        data,
+        data.get("item_content_data") or {},
+        data.get("attendance") or {},
+        data.get("progress") or {},
+        data.get("student_progress") or {},
+        data.get("user_progress") or {},
+    ]
+    # 1) viewer_url의 endat = 직전 저장 진도(초). 이 코드베이스에서 가장 잘 검증된 신호.
+    for src in _containers:
+        vu = src.get("viewer_url") if isinstance(src, dict) else None
+        if isinstance(vu, str):
+            m = re.search(r"[?&]endat=([0-9.]+)", vu)
+            if m and float(m.group(1)) > 0:
+                return float(m.group(1))
+    # 2) 명시적 누적 시청 시간 필드 (모호한 current_time/position류는 제외)
+    _keys = (
+        "cumulative_second",
+        "cumulative_time",
+        "cumulative_study_time",
+        "progress_second",
+        "study_time",
+        "watched_seconds",
+        "last_position",
+    )
+    for src in _containers:
+        if not isinstance(src, dict):
+            continue
+        for key in _keys:
+            v = src.get(key)
+            if isinstance(v, int | float) and v > 0:
+                return float(v)
+    return None
+
+
+async def _confirm_lms_attendance(page: Page, api_url: str, state: PlaybackState, log: Callable) -> None:
+    """재생 완료 후 LMS가 실제로 저장한 진도를 재조회해 state에 반영한다 (B안).
+
+    - LMS 저장 진도 / duration 비율을 state.lms_progress_ratio 에 기록
+    - 비율이 임계값 이상이면 state.progress_reported=True (확정)
+    - 명백히 미달이면 state.error 를 설정해 상위(auto/player)가 완료 처리하지 않도록 함
+    - 조회 자체가 불가하면 아무것도 바꾸지 않고 A안(progress_reported)에 위임
+    """
+    if not api_url:
+        log("  [검증] attendance API URL 미확보 — LMS 진도 재확인 생략 (A안 결과 사용)")
+        return
+    if state.duration <= 0:
+        log("  [검증] duration 불명 — LMS 진도 재확인 생략")
+        return
+
+    for attempt in range(3):
+        if attempt:
+            await asyncio.sleep(2)
+        try:
+            resp = await page.request.get(api_url)
+            if resp.status != 200:
+                log(f"  [검증] attendance API {resp.status} — 재시도 {attempt + 1}/3")
+                continue
+            data = json.loads(await resp.text())
+        except Exception as e:
+            log(f"  [검증] attendance API 조회 실패 ({attempt + 1}/3): {e}")
+            continue
+
+        watched = _extract_watched_seconds(data)
+        if watched is None:
+            log(f"  [검증] 진도 필드를 찾지 못함 — 응답 키: {list(data)[:12]}")
+            return
+
+        ratio = max(0.0, min(1.0, watched / state.duration))
+        state.lms_progress_ratio = ratio
+        log(f"  [검증] LMS 저장 진도: {watched:.0f}s / {state.duration:.0f}s ({ratio * 100:.0f}%)")
+        if ratio >= _ATTENDANCE_MIN_RATIO:
+            # LMS 원장이 완료를 확인 → 확정
+            state.progress_reported = True
+        elif not state.progress_reported:
+            # A안(진도 보고 수락)도 실패, B안(LMS 저장 진도)도 미달 → 출석 미반영으로 판정.
+            # 두 신호가 모두 음성일 때만 실패 처리해 stale endat 등으로 인한 오탐을 막는다.
+            state.error = (
+                f"재생은 끝났지만 LMS에 출석이 반영되지 않았습니다 "
+                f"(LMS 기록 진도 {ratio * 100:.0f}%). 강의 목록 새로고침 후 다시 시도하세요."
+            )
+        else:
+            # 진도 보고는 수락됐는데 재조회한 LMS 저장 진도가 낮음 — 반영 지연(stale) 추정.
+            log(f"  [검증] 진도 보고는 수락됨 — LMS 저장 진도 낮음({ratio * 100:.0f}%)은 반영 지연으로 보고 완료 유지")
+        return
+
+    log("  [검증] attendance API 3회 조회 실패 — A안 결과(progress_reported)에 위임")
 
 
 async def _fetch_learningx_duration(page: Page, learningx_url: str, log: Callable) -> float:
@@ -745,6 +851,7 @@ async def _play_via_progress_api(
                     log(f"  [API] 응답 (page ctx): {eval_status}  body={eval_body[:200]!r}")
                     if eval_status == 200 and '"result":true' in eval_body:
                         reported = True
+                        state.progress_reported = True
                 except Exception as pe:
                     log(f"  [API] page ctx fetch 실패 ({pe}) — JSONP/fallback으로 폴백")
 
@@ -754,6 +861,8 @@ async def _play_via_progress_api(
                         body = await _call_progress_jsonp(commons_frame, report_target, callback)
                         log(f"  [API] 응답 (JSONP): {body[:200]!r}")
                         reported = True
+                        if '"result":true' in body:
+                            state.progress_reported = True
                     except Exception as je:
                         log(f"  [API] JSONP 실패 ({je}) — page.request.get으로 폴백")
                         commons_frame = None
@@ -766,6 +875,8 @@ async def _play_via_progress_api(
                     )
                     body = await response.text()
                     log(f"  [API] 응답 (fallback): {response.status}  body={body[:200]!r}")
+                    if response.status == 200 and '"result":true' in body:
+                        state.progress_reported = True
 
                 next_report = current + report_interval
             except Exception as e:
@@ -776,7 +887,8 @@ async def _play_via_progress_api(
         on_progress(state)
 
     # 재생 루프 종료 후 100% 완료 보고 — commons_frame 재사용으로 ErrAlreadyInView 방지
-    await _report_completion(page, player_url, state.duration, log, commons_frame)
+    if await _report_completion(page, player_url, state.duration, log, commons_frame):
+        state.progress_reported = True
 
     # flashErrorPage 차단 해제 (루프 전체 동안 유지했던 route 정리)
     if _flash_block_handler:
@@ -957,6 +1069,7 @@ async def play_lecture(
     # page.request.get()은 learningx API에 401을 반환하므로,
     # 브라우저가 자동으로 보내는 요청의 응답을 sniff해서 fallback_duration을 채운다.
     _sniffed_duration: list[float] = []  # mutable container (리스너 클로저에서 append)
+    _sniffed_api_url: list[str] = []  # 재생 후 LMS 진도 재확인용 attendance_items API URL
 
     async def _sniff_attendance_duration(response):
         # attendance_items API 또는 lecture_attendance LTI POST 응답에서 duration 추출
@@ -965,6 +1078,21 @@ async def play_lecture(
             return
         if response.status != 200:
             return
+        # 재생 후 LMS 저장 진도 재조회에 쓸 attendance_items API URL 기억
+        if not _sniffed_api_url:
+            try:
+                if "/attendance_items/" in response.url:
+                    _sniffed_api_url.append(response.url.split("?")[0])
+                else:
+                    im = re.search(r"/lecture_attendance/items/view/(\d+)", response.url)
+                    cm = re.search(r"/courses/(\d+)/", page.url)
+                    if im and cm:
+                        _sniffed_api_url.append(
+                            f"https://canvas.ssu.ac.kr/learningx/api/v1/courses/"
+                            f"{cm.group(1)}/attendance_items/{im.group(1)}"
+                        )
+            except Exception:
+                pass
         try:
             data = json.loads(await response.text())
             d = float((data.get("item_content_data") or {}).get("duration") or 0)
@@ -1104,7 +1232,7 @@ async def play_lecture(
                 pass
 
     try:
-        return await _play_lecture_inner(
+        result_state = await _play_lecture_inner(
             page,
             lecture_url,
             on_progress,
@@ -1123,6 +1251,22 @@ async def play_lecture(
         return state
     finally:
         await _cleanup()
+
+    # B안: 재생이 완료로 판정됐으면 LMS에 실제로 출석/진도가 반영됐는지 재확인한다.
+    # (사전녹화 H.264 강의는 Plan B 진도 API가 거부돼도 시뮬레이션은 끝까지 돌아
+    #  ended=True가 되므로, LMS 원장을 신뢰 소스로 다시 확인해야 오탐을 막는다.)
+    if result_state.ended and not result_state.cancelled and not result_state.error:
+        api_url = _sniffed_api_url[0] if _sniffed_api_url else ""
+        with contextlib.suppress(Exception):
+            await _confirm_lms_attendance(page, api_url, result_state, log)
+        if result_state.error:
+            log(f"  [검증] 출석 미반영 판정 — {result_state.error}")
+        elif result_state.progress_reported:
+            log("  [검증] 출석 반영 확인됨")
+        else:
+            log("  [검증] 출석 반영 여부 불명 — 진도 보고 성공 기록 없음")
+
+    return result_state
 
 
 async def _play_lecture_inner(
@@ -1519,6 +1663,8 @@ async def _play_lecture_inner(
                             f"{result.get('b', '')!r} "
                             f"({cur:.0f}s / {dur:.0f}s)"
                         )
+                        if result.get("s") == 200 and '"result":true' in (result.get("b") or ""):
+                            state.progress_reported = True
                     except Exception as e:
                         log(f"[7] 진도 API (page ctx) 실패: {e}")
 
@@ -1564,6 +1710,7 @@ async def _play_lecture_inner(
 
     # Plan A 완료 후 progress API에 100% 직접 보고
     # 플레이어 JS가 가짜 WebM 재생 중 progress API를 호출하지 않는 경우 대비
-    await _report_completion(page, player_url_snapshot, state.duration, log, use_page_eval=True)
+    if await _report_completion(page, player_url_snapshot, state.duration, log, use_page_eval=True):
+        state.progress_reported = True
 
     return state

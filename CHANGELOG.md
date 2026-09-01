@@ -2,6 +2,28 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.8.8] - 2026-09-01
+
+### Fixed
+
+- **재생은 "완료"인데 LMS는 "미시청"인 문제**: 기존 완료 판정은 재생 시뮬레이션 타이머가
+  duration에 도달했는지(`state.ended`)만 봤고, LMS 진도 API가 우리 보고를 실제로 수락했는지와
+  완전히 분리돼 있었다. 사전녹화(H.264) 과목은 headless에서 Plan B(진도 API 직접 호출)로
+  전환되는데, 이 보고가 `ErrAlreadyInView`·세션 문제로 거부돼도 `ended=True`가 되어
+  대시보드 캐시만 "완료"로 바뀌고 LMS엔 반영되지 않았다. (`src/player/background_player.py`)
+  - **A안**: 진도 보고 응답(`"result":true`) 수락 여부를 `PlaybackState.progress_reported`로 추적
+  - **B안**: 재생 후 `attendance_items` API를 재조회해 LMS에 실제 저장된 진도 비율을 확인
+    (`PlaybackState.lms_progress_ratio`). A안·B안이 **둘 다 음성**일 때만 실패로 판정해
+    `state.error`를 설정 → 자동 모드/수동 재생이 완료 처리를 하지 않고 다음 사이클에 재시도.
+    한쪽만 성공하면 반영 지연으로 보고 완료 유지 (오탐 방지)
+  - 자동 모드에서 출석 미반영 발생 시 이벤트 로그(`player/attendance_not_recorded`) 기록 +
+    텔레그램 알림 (`backend/api/routes/auto.py`)
+
+### Internal
+
+- 출석 검증 로직 회귀 테스트 12건 추가 (`tests/test_background_player.py` 신규,
+  `tests/test_web_auto.py`) — 168/168 통과
+
 ## [v26.8.7] - 2026-09-01
 
 ### Changed
