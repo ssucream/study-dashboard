@@ -64,6 +64,21 @@ def _legacy_summary_path(course_name: str, week_label: str, lecture_title: str) 
     return mp4_path.with_stem(mp4_path.stem + "_summarized").with_suffix(".txt").expanduser().resolve()
 
 
+def _pipeline_summary_dir() -> Path:
+    """다운로드 파이프라인이 요약본을 저장하는 디렉터리 (downloads/summarized)."""
+    return (Path(Config.get_download_dir()) / "summarized").expanduser().resolve()
+
+
+def _pipeline_summary_path(course_name: str, week_label: str, lecture_title: str) -> Path:
+    """다운로드 파이프라인이 실제로 요약본을 쓰는 경로.
+
+    구조: downloads/summarized/{course}/{week}/{title}_summarized.txt
+    (build_download_paths와 동일 규칙 — pipeline 재편 이후 요약본의 canonical 위치)
+    """
+    rel = make_filepath(course_name, week_label, lecture_title)  # {course}/{week}/{title}.mp4
+    return (_pipeline_summary_dir() / rel.parent / f"{rel.stem}_summarized.txt").expanduser().resolve()
+
+
 def _is_allowed_summary_path(path: Path) -> bool:
     if path.suffix.lower() not in _ALLOWED_SUMMARY_SUFFIXES:
         return False
@@ -98,6 +113,7 @@ def find_summary_path(term: str, course_name: str, week_label: str, lecture_titl
     """강의 정보에 해당하는 생성된 요약 파일을 찾는다."""
     candidates = [
         _canonical_summary_path(term, course_name, week_label, lecture_title),
+        _pipeline_summary_path(course_name, week_label, lecture_title),
         _legacy_summary_path(course_name, week_label, lecture_title),
     ]
     for candidate in candidates:
@@ -123,46 +139,57 @@ def encode_summary_id(path: Path) -> str:
     return _encode_summary_id(path)
 
 
+def _summary_item(path: Path, term: str, course: str, week: str, title: str) -> dict[str, Any]:
+    return {
+        "id": _encode_summary_id(path),
+        "term": term,
+        "course": course,
+        "week": week,
+        "title": title,
+        "format": "markdown" if path.suffix.lower() == ".md" else "text",
+    }
+
+
 def list_summaries() -> list[dict[str, Any]]:
     """저장된 요약 파일 목록을 반환한다.
 
-    canonical 저장 구조: summaries/{term}/{course}/{week}/{title}.md
+    두 저장 위치를 모두 스캔한다:
+      - canonical:  summaries/{term}/{course}/{week}/{title}.md
+      - pipeline:   downloads/summarized/{course}/{week}/{title}_summarized.txt
+    같은 강의가 양쪽에 있으면 canonical(.md)을 우선한다.
     """
-    items: list[dict[str, Any]] = []
-    sdir = summaries_dir()
-    if not sdir.exists():
-        return items
+    by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
 
-    for path in sorted(sdir.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() not in _ALLOWED_SUMMARY_SUFFIXES:
-            continue
-        if not _is_allowed_summary_path(path):
-            continue
-        try:
-            rel = path.relative_to(sdir)
-            parts = rel.parts
+    sdir = summaries_dir()
+    if sdir.exists():
+        for path in sorted(sdir.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in _ALLOWED_SUMMARY_SUFFIXES:
+                continue
+            if not _is_allowed_summary_path(path):
+                continue
+            parts = path.relative_to(sdir).parts
             # 구조: term / course / week / title.md (4 segments)
             if len(parts) < 4:
                 continue
-            term = parts[0]
-            course = parts[1]
-            week = parts[2]
-            title = path.stem
-        except Exception:
-            continue
-        items.append(
-            {
-                "id": _encode_summary_id(path),
-                "term": term,
-                "course": course,
-                "week": week,
-                "title": title,
-                "format": "markdown" if path.suffix.lower() == ".md" else "text",
-            }
-        )
-    return items
+            term, course, week = parts[0], parts[1], parts[2]
+            by_key[(course, week, path.stem)] = _summary_item(path, term, course, week, path.stem)
+
+    pdir = _pipeline_summary_dir()
+    if pdir.exists():
+        for path in sorted(pdir.rglob("*_summarized.txt")):
+            if not path.is_file() or not _is_allowed_summary_path(path):
+                continue
+            parts = path.relative_to(pdir).parts
+            # 구조: course / week / title_summarized.txt (3 segments)
+            if len(parts) < 3:
+                continue
+            course, week = parts[0], parts[1]
+            title = path.stem.removesuffix("_summarized")
+            key = (course, week, title)
+            if key not in by_key:  # canonical(.md) 우선
+                by_key[key] = _summary_item(path, "", course, week, title)
+
+    return sorted(by_key.values(), key=lambda s: (s["course"], s["week"], s["title"]))
 
 
 def read_summary(summary_id: str) -> dict[str, Any]:

@@ -136,3 +136,63 @@ async def test_get_summary_reads_markdown_safely(monkeypatch, tmp_path):
     assert result["title"] == "1강"
     assert result["format"] == "markdown"
     assert "<script>alert(1)</script>" in result["content"]
+
+
+def _write_pipeline_summary(monkeypatch, tmp_path, course, lecture, text="1강 요약 본문"):
+    """다운로드 파이프라인이 쓰는 위치(downloads/summarized/...)에 요약본을 생성한다."""
+    from src.config import Config
+
+    monkeypatch.setattr(Config, "get_download_dir", classmethod(lambda cls: str(tmp_path)))
+    monkeypatch.setattr(summary_store, "summaries_dir", lambda: tmp_path / "summaries")
+    path = summary_store._pipeline_summary_path(course.long_name, lecture.week_label, lecture.title)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.mark.asyncio
+async def test_course_detail_detects_pipeline_generated_summary(monkeypatch, tmp_path):
+    """자동 재생 파이프라인이 생성한 요약본이 강의 상세의 has_summary에 반영돼야 한다."""
+    course, lecture = _seed_course()
+    _write_pipeline_summary(monkeypatch, tmp_path, course, lecture)
+
+    result = await courses_route.get_course_detail(course.id)
+    lecture_payload = result["weeks"][0]["lectures"][0]
+
+    assert lecture_payload["has_summary"] is True
+    assert lecture_payload["summary"]["available"] is True
+    assert lecture_payload["summary_id"]
+
+
+@pytest.mark.asyncio
+async def test_summaries_list_includes_pipeline_generated_summary(monkeypatch, tmp_path):
+    """학습 결과 목록이 downloads/summarized 아래 요약본도 나열해야 한다."""
+    course, lecture = _seed_course()
+    _write_pipeline_summary(monkeypatch, tmp_path, course, lecture)
+
+    payload = await summaries_route.get_summaries_list()
+
+    assert len(payload["summaries"]) == 1
+    item = payload["summaries"][0]
+    assert item["course"] == "테스트 과목"
+    assert item["week"] == "1주차"
+    assert item["title"] == "1강"
+    assert item["format"] == "text"
+
+    # 목록의 id로 실제 내용을 읽을 수 있어야 한다
+    detail = await summaries_route.get_summary(item["id"])
+    assert detail["content"] == "1강 요약 본문"
+
+
+@pytest.mark.asyncio
+async def test_summaries_list_prefers_canonical_over_pipeline_duplicate(monkeypatch, tmp_path):
+    course, lecture = _seed_course()
+    _write_pipeline_summary(monkeypatch, tmp_path, course, lecture, text="pipeline 본문")
+    canonical = summary_store._canonical_summary_path(course.term, course.long_name, lecture.week_label, lecture.title)
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("# canonical", encoding="utf-8")
+
+    payload = await summaries_route.get_summaries_list()
+
+    assert len(payload["summaries"]) == 1
+    assert payload["summaries"][0]["format"] == "markdown"
