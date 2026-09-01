@@ -317,6 +317,34 @@ async def _run_auto_cycle() -> None:
                 if not updated:
                     app_state.playback.refresh_recommended = True
                 app_state.auto.processed_count += 1
+                # 완료 + 출석 검증 결과를 이벤트 로그에 남긴다 (성공 케이스도 추적 가능하도록).
+                ratio = final_state.lms_progress_ratio
+                from src import event_log
+
+                with suppress(Exception):
+                    event_log.record_event(
+                        event_type="player",
+                        action="play_complete",
+                        status="success",
+                        actor_user_id=app_state.user_id or None,
+                        target_type="lecture",
+                        course_id=course.id,
+                        course_name=course.long_name,
+                        lecture_title=lec.title,
+                        week_label=lec.week_label,
+                        message="자동 재생 완료",
+                        metadata={
+                            "progress_reported": final_state.progress_reported,
+                            "lms_progress_ratio": round(ratio, 3) if ratio is not None else None,
+                        },
+                    )
+                logger.info(
+                    "재생 완료: %s / %s (진도보고=%s, LMS진도=%s)",
+                    course.long_name,
+                    lec.title,
+                    final_state.progress_reported,
+                    f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
+                )
                 await _run_post_play_pipeline(course, lec)
             else:
                 app_state.playback.status = "stopped"
