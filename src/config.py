@@ -104,6 +104,8 @@ class Config:
     SUMMARY_PROMPT_TEMPLATE: str = ""
     SUMMARY_PROMPT_EXTRA: str = ""
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: str = ""
+    # 채플 과목이면 [강연자 소개]/[성경 말씀] 섹션을 요약에 자동 추가할지 여부
+    CHAPEL_SUMMARY_ENABLED: str = "true"
     TELEGRAM_ENABLED: str = ""
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
@@ -146,6 +148,7 @@ class Config:
         cls.OPENROUTER_MODEL = db.get("OPENROUTER_MODEL", "")
         cls.SUMMARY_PROMPT_TEMPLATE = db.get("SUMMARY_PROMPT_TEMPLATE", _default_summary_prompt())
         cls.SUMMARY_PROMPT_EXTRA = db.get("SUMMARY_PROMPT_EXTRA", "")
+        cls.CHAPEL_SUMMARY_ENABLED = db.get("CHAPEL_SUMMARY_ENABLED", "true")
         cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = db.get("SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE", "false")
         if cls.AI_ENABLED == "true" and (not cls.get_ai_api_key() or not cls.get_ai_model()):
             cls.AI_ENABLED = "false"
@@ -229,6 +232,7 @@ class Config:
         auto_download_after_play: bool = True,
         stt_delete_audio_after_transcribe: bool = False,
         summary_delete_text_after_summarize: bool = False,
+        chapel_summary_enabled: bool | None = None,
     ) -> None:
         """설정 항목을 DB에 저장한다."""
         ai_agent = ai_agent or "gemini"
@@ -253,6 +257,8 @@ class Config:
         cls.AI_AGENT = ai_agent
         cls.SUMMARY_PROMPT_TEMPLATE = summary_prompt_template or _default_summary_prompt()
         cls.SUMMARY_PROMPT_EXTRA = summary_prompt_extra
+        if chapel_summary_enabled is not None:
+            cls.CHAPEL_SUMMARY_ENABLED = "true" if chapel_summary_enabled else "false"
         cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = (
             "true" if ai_enabled and summary_delete_text_after_summarize else "false"
         )
@@ -271,6 +277,7 @@ class Config:
             "SUMMARY_PROMPT_TEMPLATE": cls.SUMMARY_PROMPT_TEMPLATE,
             "SUMMARY_PROMPT_EXTRA": summary_prompt_extra,
             "SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE": cls.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE,
+            "CHAPEL_SUMMARY_ENABLED": cls.CHAPEL_SUMMARY_ENABLED,
         }
         if ai_model:
             to_save[model_attr] = ai_model

@@ -52,7 +52,18 @@ _EXTRA_PROMPT_TEMPLATE = """
 {extra}
 """
 
-# 비전채플 과목 전용 추가 섹션
+# 채플(비전채플 등) 과목 감지 키워드. 과목명에서 공백을 제거하고 소문자로 맞춰 비교하므로
+# "비전 채플", "비전채플Ⅱ (12345)", "Chapel" 등 표기 변형도 매칭된다.
+_CHAPEL_KEYWORDS = ("채플", "chapel")
+
+
+def is_chapel_course(course_name: str) -> bool:
+    """과목명이 채플 과목으로 보이면 True."""
+    normalized = (course_name or "").replace(" ", "").lower()
+    return any(keyword in normalized for keyword in _CHAPEL_KEYWORDS)
+
+
+# 채플 과목 전용 추가 섹션
 _CHAPEL_EXTRA_PROMPT = """\
 이 강의는 채플(기독교 예배·강연) 형식입니다. 아래 두 섹션을 추가로 작성하세요.
 
@@ -169,6 +180,7 @@ def summarize(
     extra_prompt: str = "",
     course_name: str = "",
     prompt_template: str = "",
+    chapel_section: bool = True,
     output_path: Path | None = None,
 ) -> Path:
     """
@@ -180,8 +192,9 @@ def summarize(
         api_key:      agent에 해당하는 API 키
         model:        사용할 모델 ID
         extra_prompt: 사용자 추가 지시사항 (기본 프롬프트 뒤에 추가)
-        course_name:  과목명 (비전채플 감지에 사용)
+        course_name:  과목명 (채플 과목 감지에 사용)
         prompt_template: 사용자 편집 요약 프롬프트. `{text}` placeholder 사용 가능
+        chapel_section: 채플 과목이면 [강연자 소개]/[성경 말씀] 섹션 자동 추가 여부
 
     Returns:
         생성된 _summarized.txt 파일 경로
@@ -195,6 +208,7 @@ def summarize(
         extra_prompt=extra_prompt,
         course_name=course_name,
         prompt_template=prompt_template,
+        chapel_section=chapel_section,
     )
 
     if agent == "gemini":
@@ -218,6 +232,7 @@ def build_summary_prompt(
     extra_prompt: str = "",
     course_name: str = "",
     prompt_template: str = "",
+    chapel_section: bool = True,
 ) -> str:
     """요약 요청 프롬프트를 구성한다."""
     template = prompt_template or DEFAULT_SUMMARY_PROMPT
@@ -225,7 +240,7 @@ def build_summary_prompt(
         prompt = template.replace("{text}", text)
     else:
         prompt = f"{template.rstrip()}\n\n강의 텍스트:\n{text}"
-    if "비전채플" in course_name:
+    if chapel_section and is_chapel_course(course_name):
         prompt += _EXTRA_PROMPT_TEMPLATE.format(extra=_CHAPEL_EXTRA_PROMPT)
     if extra_prompt:
         prompt += _EXTRA_PROMPT_TEMPLATE.format(extra=extra_prompt)

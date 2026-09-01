@@ -201,6 +201,54 @@ async def test_get_settings_returns_summary_prompt_default():
 
     assert payload["SUMMARY_PROMPT_DEFAULT"] == DEFAULT_SUMMARY_PROMPT
     assert payload["SUMMARY_PROMPT_TEMPLATE"] == DEFAULT_SUMMARY_PROMPT
+    assert "SUMMARY_PROMPT_EXTRA" in payload
+    assert "CHAPEL_SUMMARY_ENABLED" in payload
+
+
+@pytest.mark.asyncio
+async def test_update_settings_persists_extra_prompt_and_chapel_toggle(monkeypatch):
+    saved = {}
+
+    monkeypatch.setattr(settings_route.db, "set_many", lambda values: saved.update(values))
+    monkeypatch.setattr(Config, "load", lambda: None)
+
+    await settings_route.update_settings(
+        settings_route.SettingsUpdate(
+            DOWNLOAD_ENABLED="true",
+            DOWNLOAD_RULE="mp3",
+            STT_ENABLED="true",
+            AI_ENABLED="true",
+            GOOGLE_API_KEY="real-secret-key",
+            GEMINI_MODEL="gemini-2.5-flash",
+            SUMMARY_PROMPT_EXTRA="영어 용어는 원문 유지",
+            CHAPEL_SUMMARY_ENABLED="false",
+        )
+    )
+
+    assert saved["SUMMARY_PROMPT_EXTRA"] == "영어 용어는 원문 유지"
+    assert saved["CHAPEL_SUMMARY_ENABLED"] == "false"
+
+
+@pytest.mark.asyncio
+async def test_update_settings_can_clear_extra_prompt(monkeypatch):
+    saved = {}
+
+    monkeypatch.setattr(settings_route.db, "set_many", lambda values: saved.update(values))
+    monkeypatch.setattr(Config, "load", lambda: None)
+
+    await settings_route.update_settings(
+        settings_route.SettingsUpdate(
+            DOWNLOAD_ENABLED="true",
+            DOWNLOAD_RULE="mp3",
+            STT_ENABLED="true",
+            AI_ENABLED="true",
+            GOOGLE_API_KEY="real-secret-key",
+            GEMINI_MODEL="gemini-2.5-flash",
+            SUMMARY_PROMPT_EXTRA="",
+        )
+    )
+
+    assert saved["SUMMARY_PROMPT_EXTRA"] == ""
 
 
 @pytest.mark.asyncio

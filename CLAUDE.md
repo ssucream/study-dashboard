@@ -136,7 +136,8 @@ CREATE TABLE settings (
 | `OPENAI_API_KEY` | OpenAI API 키 (암호화) | — |
 | `OPENROUTER_MODEL` | OpenRouter 모델 ID | `openrouter/auto` |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 (암호화) | — |
-| `SUMMARY_PROMPT_EXTRA` | 요약 프롬프트 추가 지시 | — |
+| `SUMMARY_PROMPT_EXTRA` | 요약 프롬프트 추가 지시 (기본 형식 뒤에 덧붙음) | — |
+| `CHAPEL_SUMMARY_ENABLED` | 채플 과목 요약에 [강연자 소개]/[성경 말씀] 섹션 자동 추가 | `true` / `false` |
 | `TELEGRAM_ENABLED` | 텔레그램 알림 사용 여부 | `true` / `false` |
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 (암호화) | — |
 | `TELEGRAM_CHAT_ID` | 텔레그램 채팅 ID | — |

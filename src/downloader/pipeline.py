@@ -123,6 +123,7 @@ async def download_lecture_media(
     ai_model: str = "",
     summary_prompt_template: str = "",
     summary_prompt_extra: str = "",
+    chapel_summary_enabled: bool = True,
     delete_text_after_summary: bool = False,
     on_stage: StageCallback | None = None,
     on_progress: ProgressCallback | None = None,
@@ -246,6 +247,7 @@ async def download_lecture_media(
                         prompt_template=summary_prompt_template or "",
                         extra_prompt=summary_prompt_extra or "",
                         course_name=course_name,
+                        chapel_section=chapel_summary_enabled,
                         output_path=summary_path,
                     ),
                 )
@@ -323,6 +325,7 @@ async def run_download_from_config(
         ai_model=Config.get_ai_model() or "",
         summary_prompt_template=Config.get_summary_prompt_template(),
         summary_prompt_extra=Config.SUMMARY_PROMPT_EXTRA or "",
+        chapel_summary_enabled=Config.CHAPEL_SUMMARY_ENABLED != "false",
         delete_text_after_summary=Config.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE == "true",
         on_stage=on_stage,
     )

@@ -30,6 +30,7 @@ export const state = {
     SUMMARY_PROMPT_DEFAULT: '',
     SUMMARY_PROMPT_EXTRA: '',
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: 'false',
+    CHAPEL_SUMMARY_ENABLED: 'true',
   },
   settingsLoaded: false,
   autoDownloadStartedFor: '',

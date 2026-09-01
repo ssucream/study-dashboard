@@ -648,9 +648,26 @@
                     </button>
                   </div>
                 </div>
-                <textarea id="summary-prompt-template" name="SUMMARY_PROMPT_TEMPLATE" rows="2" readonly
-                  class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors resize-y leading-6 overflow-hidden"></textarea>
+                <textarea id="summary-prompt-template" name="SUMMARY_PROMPT_TEMPLATE" rows="12" readonly
+                  class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors resize-y leading-6"></textarea>
                 <p class="text-xs text-slate-500">프롬프트 안의 <span class="text-slate-400">{text}</span> 위치에 STT 원문이 삽입됩니다.</p>
+              </div>
+              <div class="flex flex-col gap-2">
+                <label class="text-xs text-slate-400">추가 요약 지시사항 <span class="text-slate-500">(선택)</span></label>
+                <textarea id="summary-prompt-extra" name="SUMMARY_PROMPT_EXTRA" rows="3"
+                  placeholder="예: 영어 용어는 원문 그대로 표기해줘 / 코드 예시도 포함해줘"
+                  class="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors resize-y leading-6"></textarea>
+                <p class="text-xs text-slate-500">기본 요약 형식 뒤에 덧붙는 지시사항입니다. 비우면 사용하지 않습니다.</p>
+              </div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-sm text-slate-300">채플 과목 자동 섹션</span>
+                  <p class="text-xs text-slate-500 mt-0.5">과목명에 "채플"이 포함되면 요약에 [강연자 소개] · [성경 말씀] 섹션을 자동 추가합니다.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" name="CHAPEL_SUMMARY_ENABLED" class="sr-only peer" />
+                  <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
               </div>
               <div id="summary-delete-text-row" class="flex items-center justify-between">
                 <div>

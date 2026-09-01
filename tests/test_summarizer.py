@@ -85,6 +85,46 @@ def test_build_summary_prompt_tolerates_stray_braces():
     assert "{GOOGLE_API_KEY}" in prompt
 
 
+@pytest.mark.parametrize(
+    "course_name, expected",
+    [
+        ("비전채플 (12345)", True),
+        ("비전 채플", True),
+        ("비전채플Ⅱ", True),
+        ("채플", True),
+        ("Global Chapel", True),
+        ("자료구조", False),
+        ("", False),
+    ],
+)
+def test_is_chapel_course(course_name, expected):
+    from src.summarizer.summarizer import is_chapel_course
+
+    assert is_chapel_course(course_name) is expected
+
+
+def test_build_summary_prompt_adds_chapel_sections_for_chapel_course():
+    from src.summarizer.summarizer import build_summary_prompt
+
+    prompt = build_summary_prompt("설교 내용", course_name="비전 채플 (99999)")
+    assert "[강연자 소개]" in prompt
+    assert "[성경 말씀]" in prompt
+
+
+def test_build_summary_prompt_skips_chapel_sections_when_disabled():
+    from src.summarizer.summarizer import build_summary_prompt
+
+    prompt = build_summary_prompt("설교 내용", course_name="비전채플", chapel_section=False)
+    assert "[강연자 소개]" not in prompt
+
+
+def test_build_summary_prompt_no_chapel_sections_for_regular_course():
+    from src.summarizer.summarizer import build_summary_prompt
+
+    prompt = build_summary_prompt("강의 내용", course_name="운영체제")
+    assert "[강연자 소개]" not in prompt
+
+
 def test_summarize_gemini_empty_response_raises():
     """Gemini가 안전 필터 등으로 빈 응답을 주면 명확한 RuntimeError."""
     from unittest.mock import MagicMock

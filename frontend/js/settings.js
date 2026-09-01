@@ -127,9 +127,15 @@ export async function loadSettings() {
       prompt.value = s.SUMMARY_PROMPT_TEMPLATE || s.SUMMARY_PROMPT_DEFAULT || '';
       prompt.readOnly = true;
       $('#btn-summary-prompt-edit').textContent = '편집';
-      autoResizeTextarea(prompt);
     }
+    const promptExtra = $('#summary-prompt-extra');
+    if (promptExtra) promptExtra.value = s.SUMMARY_PROMPT_EXTRA || '';
     applySettingsVisibility(form);
+    // 리사이즈는 섹션 표시 여부가 확정된 뒤 실행해야 scrollHeight가 올바르게 계산된다.
+    requestAnimationFrame(() => {
+      if (prompt) autoResizeTextarea(prompt);
+      if (promptExtra) autoResizeTextarea(promptExtra);
+    });
   } catch {}
 }
 
@@ -140,14 +146,23 @@ $('#settings-form').addEventListener('submit', async (e) => {
 
   new FormData(form); // trigger validation
 
+  // 비워서 저장(초기화)할 수 있어야 하는 프롬프트 필드는 빈 값도 항상 전송한다.
+  const ALWAYS_SEND = new Set(['SUMMARY_PROMPT_EXTRA']);
   $$('input, select, textarea', form).forEach(el => {
     if (!el.name) return;
     if (el.type === 'checkbox') {
       payload[el.name] = el.checked ? 'true' : 'false';
     } else if (el.value.trim()) {
       payload[el.name] = el.value.trim();
+    } else if (ALWAYS_SEND.has(el.name)) {
+      payload[el.name] = '';
     }
   });
+  // 요약 프롬프트가 기본값 그대로면 빈 값으로 저장해 향후 기본 프롬프트 변경이 반영되도록 한다.
+  const dflt = (state.settings.SUMMARY_PROMPT_DEFAULT || '').trim();
+  if (payload.SUMMARY_PROMPT_TEMPLATE && dflt && payload.SUMMARY_PROMPT_TEMPLATE.trim() === dflt) {
+    payload.SUMMARY_PROMPT_TEMPLATE = '';
+  }
   if (payload.DOWNLOAD_ENABLED !== 'true') {
     payload.AUTO_DOWNLOAD_AFTER_PLAY = 'false';
     payload.STT_ENABLED = 'false';
@@ -216,9 +231,12 @@ $('#btn-summary-prompt-edit').addEventListener('click', () => {
   const prompt = $('#summary-prompt-template');
   prompt.readOnly = !prompt.readOnly;
   $('#btn-summary-prompt-edit').textContent = prompt.readOnly ? '편집' : '편집 완료';
+  autoResizeTextarea(prompt);
   if (!prompt.readOnly) prompt.focus();
 });
 
-$('#summary-prompt-template').addEventListener('input', function () {
-  autoResizeTextarea(this);
+['#summary-prompt-template', '#summary-prompt-extra'].forEach(sel => {
+  $(sel)?.addEventListener('input', function () {
+    autoResizeTextarea(this);
+  });
 });

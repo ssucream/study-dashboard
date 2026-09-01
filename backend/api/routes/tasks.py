@@ -391,6 +391,7 @@ async def start_summarize(task_id: str):
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
+                chapel_section=Config.CHAPEL_SUMMARY_ENABLED != "false",
                 output_path=summary_out_path,
             ),
         )
@@ -545,6 +546,7 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
                 prompt_template=Config.get_summary_prompt_template(),
                 extra_prompt=Config.SUMMARY_PROMPT_EXTRA or "",
                 course_name=course_name,
+                chapel_section=Config.CHAPEL_SUMMARY_ENABLED != "false",
                 output_path=summary_out_path,
             ),
         )

@@ -91,11 +91,14 @@ async def test_download_pipeline_summarizes_txt_and_deletes_source(monkeypatch, 
         extra_prompt: str = "",
         course_name: str = "",
         prompt_template: str = "",
+        chapel_section: bool = True,
         output_path=None,
     ):
         summary_path = output_path if output_path else txt_path.with_stem(txt_path.stem + "_summarized")
         summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(f"{agent}:{model}:{extra_prompt}:{course_name}:{prompt_template}", encoding="utf-8")
+        summary_path.write_text(
+            f"{agent}:{model}:{extra_prompt}:{course_name}:{prompt_template}:{chapel_section}", encoding="utf-8"
+        )
         return summary_path
 
     monkeypatch.setattr(pipeline, "extract_video_url", fake_extract_video_url)
@@ -125,7 +128,7 @@ async def test_download_pipeline_summarizes_txt_and_deletes_source(monkeypatch, 
     txt_path = Path(result["summary"]["txt_path"])
     summary_path = Path(result["summary"]["summary_path"])
     assert not txt_path.exists()
-    assert summary_path.read_text(encoding="utf-8") == "gemini:gemini-2.5-flash:시험 대비:테스트:프롬프트 {text}"
+    assert summary_path.read_text(encoding="utf-8") == "gemini:gemini-2.5-flash:시험 대비:테스트:프롬프트 {text}:True"
     assert result["summary"]["text_deleted"] is True
     assert any(file["type"] == "summary" for file in result["files"])
     assert any(file["type"] == "txt" and file["deleted"] == "true" for file in result["files"])
