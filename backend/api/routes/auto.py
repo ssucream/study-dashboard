@@ -1,6 +1,7 @@
 """자동 모드 API — 미시청 강의를 스케줄에 따라 자동 재생한다."""
 
 import asyncio
+import logging
 from contextlib import suppress
 from datetime import datetime, timedelta
 
@@ -10,6 +11,7 @@ from backend.api.task_manager import ManagedTask, task_manager
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _DEFAULT_SCHEDULE_HOURS = [9, 13, 18, 23]
@@ -256,13 +258,10 @@ async def _run_auto_cycle() -> None:
             _on_progress(final_state)
 
             if final_state.cancelled:
-                # 사용자가 재생 중 정지 → 자동 모드도 중단하고 지속 상태를 끈다
+                # 재생이 취소됨 → 이번 세션의 자동 루프는 멈추되, 지속 상태(DB)는 건드리지
+                # 않는다. 자동 모드는 '자동 모드 중지'로만 완전히 꺼지고, 재로그인 시 재개된다.
                 app_state.playback.status = "stopped"
                 app_state.auto.enabled = False
-                with suppress(Exception):
-                    from src.config import Config
-
-                    Config.save_auto_state(False)
                 break
             elif final_state.error:
                 app_state.playback.status = "error"
@@ -370,10 +369,14 @@ def resume_persisted_auto() -> bool:
     from src.config import Config
 
     if Config.AUTO_ENABLED != "true":
+        logger.info("자동 모드 복원 건너뜀 — 지속 상태 OFF (AUTO_ENABLED=%r)", Config.AUTO_ENABLED)
         return False
     if app_state.auto.enabled and app_state.auto.task and not app_state.auto.task.done():
+        logger.info("자동 모드 복원 건너뜀 — 이미 실행 중")
         return False
-    _launch_auto_loop(Config.get_auto_schedule_hours())
+    hours = Config.get_auto_schedule_hours()
+    logger.info("자동 모드 복원 — 로그인 시 DB 지속 상태가 ON, 스케줄=%s 로 재개", hours)
+    _launch_auto_loop(hours)
     return True
 
 

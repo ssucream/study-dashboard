@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import suppress
 
 from backend.api.state import app_state
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 from src import event_log
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _LOGIN_TIMEOUT_SECONDS = 45
@@ -109,17 +111,18 @@ async def login(req: LoginRequest):
         message="웹 로그인 성공",
     )
 
-    # 백엔드 재시작 등으로 세션이 끊겼지만 자동 모드가 켜져 있던 상태였다면 재개한다.
+    # 로그아웃/백엔드 재시작으로 세션이 끊겼어도 자동 모드가 켜져 있던 상태였다면 재개한다.
     with suppress(Exception):
         from backend.api.routes.auto import resume_persisted_auto
 
         if resume_persisted_auto():
+            logger.info("로그인 후 자동 모드 자동 재개 (user=%s)", event_log.mask_user_id(req.user_id))
             event_log.record_event(
                 event_type="auto",
                 action="resume",
                 status="success",
                 actor_user_id=event_log.mask_user_id(req.user_id),
-                message="백엔드 재시작 후 자동 모드 자동 재개",
+                message="로그인 시 자동 모드 자동 재개",
             )
 
     return {"success": True, "user_id": req.user_id}
@@ -163,9 +166,10 @@ async def logout():
     from src.config import Config
 
     Config.clear_session_credentials()
-    # 명시적 로그아웃은 사용자 의사이므로 재로그인 시 자동 모드를 복원하지 않는다.
-    with suppress(Exception):
-        Config.save_auto_state(False)
+    # 로그아웃은 자동 모드 지속 상태를 끄지 않는다.
+    # 한 번 켠 자동 모드는 '자동 모드 중지'를 누르기 전까지 유지되며,
+    # 로그아웃/백엔드 재시작 후 재로그인 시 자동으로 재개된다. (학번/비밀번호는
+    # 메모리 전용이라 로그아웃 상태에서 루프를 계속 돌릴 수는 없다.)
 
     event_log.record_event(
         event_type="auth",

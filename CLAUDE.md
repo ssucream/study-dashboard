@@ -142,7 +142,7 @@ CREATE TABLE settings (
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 (암호화) | — |
 | `TELEGRAM_CHAT_ID` | 텔레그램 채팅 ID | — |
 | `TELEGRAM_AUTO_DELETE` | 전송 후 파일 자동 삭제 | `true` / `false` |
-| `AUTO_ENABLED` | 자동 모드 지속 상태 (앱이 관리, 백엔드 재시작 후 재로그인 시 복원용) | `true` / `false` |
+| `AUTO_ENABLED` | 자동 모드 지속 상태 (앱이 관리, 재로그인 시 복원용) — `자동 모드 중지` 버튼으로만 `false`가 되며 로그아웃·재시작은 유지 | `true` / `false` |
 | `AUTO_SCHEDULE_HOURS` | 자동 모드 스케줄 시각 (CSV, 앱이 관리) | `9,13,18,23` |
 
 ## Learning X 기술 메모

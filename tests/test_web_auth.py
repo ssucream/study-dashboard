@@ -270,8 +270,8 @@ async def test_login_does_not_resume_when_auto_persisted_disabled(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_logout_clears_persisted_auto_state(monkeypatch):
-    """명시적 로그아웃은 재로그인 시 복원되지 않도록 지속 상태를 끈다."""
+async def test_logout_keeps_persisted_auto_state(monkeypatch):
+    """로그아웃은 자동 모드 지속 상태를 끄지 않는다 — 재로그인 시 자동 재개돼야 한다."""
     import src.db as db_module
     from src.config import Config
 
@@ -281,5 +281,33 @@ async def test_logout_clears_persisted_auto_state(monkeypatch):
 
     await auth_route.logout()
 
-    assert Config.AUTO_ENABLED == "false"
-    assert db_module.get("AUTO_ENABLED") == "false"
+    assert db_module.get("AUTO_ENABLED") == "true"
+    assert db_module.get("AUTO_SCHEDULE_HOURS") == "9,13"
+
+
+@pytest.mark.asyncio
+async def test_relogin_after_logout_resumes_auto_mode(monkeypatch):
+    """로그아웃 → 재로그인 시나리오에서 자동 모드가 자동 재개된다."""
+    import src.db as db_module
+    from src.config import Config
+
+    monkeypatch.setattr("src.scraper.course_scraper.CourseScraper", _FakeScraper)
+    launched: list[list[int]] = []
+    monkeypatch.setattr(
+        "backend.api.routes.auto._launch_auto_loop",
+        lambda hours: launched.append(hours) or "task-x",
+    )
+
+    # 사용자가 자동 모드를 켜고 로그아웃
+    app_state.scraper = _FakeScraper()
+    Config.save_auto_state(True, [9, 13])
+    await auth_route.logout()
+    assert db_module.get("AUTO_ENABLED") == "true"
+
+    # Config.load()가 재시작을 시뮬레이션 — DB에서 지속 상태를 다시 읽음
+    Config.load()
+    assert Config.AUTO_ENABLED == "true"
+
+    await auth_route.login(auth_route.LoginRequest(user_id="s", password="p"))
+
+    assert launched == [[9, 13]]

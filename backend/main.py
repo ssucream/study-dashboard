@@ -8,6 +8,15 @@ from backend.api.routes import ws as ws_route
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# 앱 모듈(backend.*, src.*)의 INFO 로그가 uvicorn 로그와 함께 stdout에 보이도록 한다.
+# uvicorn은 자체 로거만 설정하고 root logger는 건드리지 않아, 이게 없으면 app의
+# logger.info(...)가 출력되지 않는다.
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=_LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+else:
+    logging.getLogger().setLevel(_LOG_LEVEL)
+
 logger = logging.getLogger(__name__)
 
 
