@@ -53,3 +53,9 @@ class AppState:
 
 
 app_state = AppState()
+
+# 스크래핑(과목 목록 로딩)과 Playwright 브라우저 재시작을 전역에서 직렬화하는 뮤텍스.
+# ensure_courses_loaded / refresh_courses / 자동 모드 사이클이 모두 이 락을 잡는다.
+# 자동 사이클의 브라우저 close()가 진행 중인 fetch_all_details를 끊어
+# 과목 상세가 None이 되던 레이스를 방지한다. (재생 자체는 락을 잡지 않는다)
+scraper_lock = asyncio.Lock()

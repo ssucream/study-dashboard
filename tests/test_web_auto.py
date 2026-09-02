@@ -1,8 +1,10 @@
 """자동 모드 route 테스트."""
 
+import asyncio
+
 import pytest
 from backend.api.routes import auto as auto_route
-from backend.api.state import PlaybackProgress, app_state
+from backend.api.state import PlaybackProgress, app_state, scraper_lock
 from backend.api.task_manager import task_manager
 
 from src.scraper.models import Course, CourseDetail, LectureItem, LectureType, Week
@@ -106,6 +108,51 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
 
 async def _noop(*args, **kwargs):
     pass
+
+
+def test_auto_cycle_shares_scraper_lock_with_course_loader():
+    """자동 모드 사이클과 ensure_courses_loaded가 같은 뮤텍스를 공유해야 레이스가 없다."""
+    from backend.api.routes import courses as courses_route
+
+    assert auto_route.scraper_lock is scraper_lock
+    assert courses_route._courses_load_lock is scraper_lock
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_scrape_waits_for_scraper_lock(monkeypatch):
+    """레이스 회귀: 다른 곳이 scraper_lock을 쥐고 있으면 사이클 스크래핑이 대기하고
+    app_state.details를 덮어쓰지 않는다."""
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    detail = CourseDetail(course=course, course_name="성서읽기", professors="", weeks=[])
+
+    calls = {"fetch": 0}
+
+    class _Scraper:
+        _page = object()
+
+        async def fetch_courses(self):
+            calls["fetch"] += 1
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.auto.enabled = True
+    app_state.auto.schedule_hours = [9]
+
+    await scraper_lock.acquire()
+    try:
+        cycle = asyncio.create_task(auto_route._run_auto_cycle())
+        await asyncio.sleep(0.05)
+        assert calls["fetch"] == 0  # 락 대기 중 — 스크래핑 시작 안 함
+        assert app_state.details == []
+    finally:
+        scraper_lock.release()
+
+    await asyncio.wait_for(cycle, timeout=2)
+    assert calls["fetch"] == 1
+    assert app_state.details == [detail]
 
 
 @pytest.mark.asyncio

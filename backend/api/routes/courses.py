@@ -1,8 +1,7 @@
-import asyncio
 from collections import Counter
 
 from backend.api.auth_dep import require_auth
-from backend.api.state import app_state
+from backend.api.state import app_state, scraper_lock
 from backend.api.summary_store import summaries_dir, summary_for_lecture
 from fastapi import APIRouter, HTTPException
 
@@ -10,7 +9,8 @@ from src.config import Config
 
 router = APIRouter()
 
-_courses_load_lock = asyncio.Lock()
+# 스크래핑/브라우저 재시작 직렬화용 전역 뮤텍스. 자동 모드 사이클(auto.py)과 공유한다.
+_courses_load_lock = scraper_lock
 
 
 async def ensure_courses_loaded() -> None:

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import suppress
 
-from backend.api.state import app_state
+from backend.api.state import app_state, scraper_lock
 from backend.api.task_manager import task_manager
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -50,13 +50,16 @@ async def _start_scraper_with_timeout(scraper) -> None:
 async def login(req: LoginRequest):
     from src.scraper.course_scraper import CourseScraper
 
-    if app_state.scraper:
-        await _close_scraper(app_state.scraper)
-        app_state.scraper = None
-
+    # 진행 중인 스크래핑(자동 모드 사이클 등)이 있으면 끝나기를 기다린 뒤 교체한다.
+    # 락 없이 이전 scraper를 닫으면 실행 중이던 fetch_all_details가 TargetClosedError로
+    # 끊겨 과목 상세 일부가 유실된다.
     scraper = CourseScraper(username=req.user_id, password=req.password)
     try:
-        await _start_scraper_with_timeout(scraper)
+        async with scraper_lock:
+            if app_state.scraper:
+                await _close_scraper(app_state.scraper)
+                app_state.scraper = None
+            await _start_scraper_with_timeout(scraper)
     except TimeoutError:
         await _close_scraper(scraper)
         event_log.record_event(

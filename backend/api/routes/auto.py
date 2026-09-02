@@ -6,7 +6,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 
 from backend.api.auth_dep import require_auth
-from backend.api.state import PlaybackProgress, app_state
+from backend.api.state import PlaybackProgress, app_state, scraper_lock
 from backend.api.task_manager import ManagedTask, task_manager
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -159,12 +159,15 @@ async def _run_auto_cycle() -> None:
 
     app_state.auto.error = None
 
-    # 강의 목록 갱신
+    # 강의 목록 갱신 — ensure_courses_loaded/refresh 등 다른 스크래핑과 직렬화한다.
+    # (락 없이 실행하면 사이클 종료 후 브라우저 재시작이 진행 중인 fetch_all_details를
+    #  끊어 일부 과목 상세가 None이 되는 레이스가 발생한다)
     try:
-        courses = await app_state.scraper.fetch_courses()
-        details = await app_state.scraper.fetch_all_details(courses)
-        app_state.courses = courses
-        app_state.details = details
+        async with scraper_lock:
+            courses = await app_state.scraper.fetch_courses()
+            details = await app_state.scraper.fetch_all_details(courses)
+            app_state.courses = courses
+            app_state.details = details
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -204,8 +207,9 @@ async def _run_auto_cycle() -> None:
         # 5강의마다 중간 브라우저 재시작 (Chromium 힙 누적 억제)
         if idx > 0 and idx % 5 == 0 and app_state.scraper:
             try:
-                await app_state.scraper.close()
-                await app_state.scraper.start()
+                async with scraper_lock:
+                    await app_state.scraper.close()
+                    await app_state.scraper.start()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -381,8 +385,9 @@ async def _auto_loop() -> None:
             # 사이클 완료 후 브라우저 재시작 (Chromium 메모리 누적 방지)
             if app_state.auto.enabled and app_state.scraper:
                 try:
-                    await app_state.scraper.close()
-                    await app_state.scraper.start()
+                    async with scraper_lock:
+                        await app_state.scraper.close()
+                        await app_state.scraper.start()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
