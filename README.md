@@ -125,10 +125,10 @@ study-dashboard/
 ```bash
 mkdir study-dashboard && cd study-dashboard
 
-curl -LO https://github.com/HelloJamong/study-dashboard/releases/latest/download/docker-compose.yml
+curl -LO https://github.com/ssucream/study-dashboard/releases/latest/download/docker-compose.yml
 ```
 
-> `curl`이 없으면 [최신 릴리즈 페이지](https://github.com/HelloJamong/study-dashboard/releases/latest)에서
+> `curl`이 없으면 [최신 릴리즈 페이지](https://github.com/ssucream/study-dashboard/releases/latest)에서
 > `docker-compose.yml`을 직접 내려받아 이 폴더에 두면 됩니다.
 
 ### 2. 로컬 HTTPS 인증서 생성 (최초 1회)
@@ -181,7 +181,7 @@ docker compose down -v                         # 중지 + 캐시 볼륨까지 �
 지우고 바로 아래 주석 처리된 `build:` 섹션(및 소스 볼륨 마운트)의 주석을 해제합니다.
 
 ```bash
-git clone https://github.com/HelloJamong/study-dashboard.git
+git clone https://github.com/ssucream/study-dashboard.git
 cd study-dashboard
 ./scripts/generate-local-cert.sh          # HTTPS 인증서 생성
 # docker-compose.yml에서 image: → build: 로 교체하고 소스 볼륨 마운트 주석 해제 후
