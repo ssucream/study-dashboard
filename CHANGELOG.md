@@ -2,6 +2,35 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.9.0] - 2026-09-02
+
+### Added
+
+- **텔레그램 알림 종류별 ON/OFF 토글**: 재생 완료 / 요약 발송 / 오류 발생 / 마감 임박 4종을
+  설정에서 개별로 켜고 끌 수 있다 (`TELEGRAM_NOTIFY_PLAYBACK`·`TELEGRAM_NOTIFY_SUMMARY`·
+  `TELEGRAM_NOTIFY_ERROR`·`TELEGRAM_NOTIFY_DEADLINE`, 기본 모두 켜짐 → 기존 사용자 동작 유지).
+  백엔드 전송 지점마다 흩어져 있던 `TELEGRAM_ENABLED + 토큰 + Chat ID` 게이트를
+  `Config.should_notify(category)` 하나로 통합 (`src/config.py`,
+  `backend/api/routes/{player,tasks,auto,deadline}.py`).
+- **마감 임박 알림 발송 시점 설정**: 7일 / 3일 / 1일 / 12시간 / 6시간 전 프리셋 체크박스로
+  선택 (`TELEGRAM_DEADLINE_THRESHOLDS`, 시간 단위 CSV, 기본 `168,72,24,12`). 하드코딩돼 있던
+  `_THRESHOLDS = [24, 12]`를 `Config.get_deadline_thresholds()`로 대체
+  (`src/notifier/deadline_checker.py`).
+- 마감 알림 메시지가 48시간 이상 남은 경우 "약 N일 남음"으로 표기 (기존엔 "약 168시간 남음").
+
+### Changed
+
+- 대시보드 마감 목록 표시(`find_approaching_deadlines`)와 텔레그램 전송 시점을 분리.
+  표시는 전송 시점 설정과 무관하게 항상 7일 이내 전체를 강의당 1건으로 반환하고, 전송 시점은
+  사용자 설정을 따른다. 전송 대상 산출은 `find_deadline_notifications`로 분리
+  (`POST /api/deadline/check` 응답 항목에서 `threshold` 필드 제거 — 프론트 미사용).
+
+### Tests
+
+- `tests/test_deadline_checker.py` 신규 — 표시/전송 분리, `parse_deadline_thresholds` 정규화,
+  `Config.should_notify` 카테고리 게이트, 이미 알린 항목 스킵
+- `tests/test_web_settings.py` — 신규 텔레그램 토글/시점 필드 저장·조회·정규화
+
 ## [v26.8.10] - 2026-09-02
 
 ### Fixed
