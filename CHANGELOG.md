@@ -2,6 +2,29 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.9.1] - 2026-09-02
+
+### Fixed
+
+- **로그인·자동 모드와 과목 로딩이 경합해 일부 과목 상세가 통째로 유실되던 문제**:
+  자동 모드 사이클은 매 실행마다 `fetch_all_details`로 과목 목록을 다시 스크래핑하고,
+  사이클 종료·5강의마다 Playwright 브라우저를 재시작(`scraper.close()` → `start()`)한다.
+  이 스크래핑/재시작이 `_courses_load_lock`으로 보호되지 않아, 로그인 직후 프론트가 부르는
+  `ensure_courses_loaded`(대시보드 통계·마감 체크)나 다른 로그인이 동시에 스크래핑 중일 때
+  브라우저가 닫히면 진행 중이던 `fetch_all_details`가 `TargetClosedError`로 끊겨
+  해당 과목들의 `CourseDetail`이 `None`이 됐다. 그 결과 미시청 영상·미제출 과제·퀴즈 수가
+  실제보다 적게(0으로) 표시됐다.
+  - 스크래핑과 브라우저 재시작을 직렬화하는 전역 뮤텍스 `scraper_lock`을 `backend/api/state.py`에
+    두고, `ensure_courses_loaded`·`refresh_courses`(기존 `_courses_load_lock` → 별칭),
+    자동 모드 사이클의 목록 갱신·중간/사이클 후 브라우저 재시작(`backend/api/routes/auto.py`),
+    로그인 시 기존 scraper 교체(`backend/api/routes/auto.py`, `backend/api/routes/auth.py`)가
+    모두 이 하나의 락을 잡도록 했다. 재생 자체는 락을 잡지 않는다.
+
+### Tests
+
+- `tests/test_web_auto.py` — 자동 사이클이 `scraper_lock`을 공유하는지, 다른 곳이 락을 쥐면
+  사이클 스크래핑이 대기하며 `app_state.details`를 덮어쓰지 않는지 회귀 테스트
+
 ## [v26.9.0] - 2026-09-02
 
 ### Added
