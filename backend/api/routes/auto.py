@@ -49,17 +49,13 @@ async def _run_post_play_pipeline(course, lec) -> None:
     from src.downloader.pipeline import DownloadUnsupportedError, run_download_from_config
     from src.notifier import telegram_notifier
 
-    telegram_enabled = Config.TELEGRAM_ENABLED == "true"
     bot_token = Config.TELEGRAM_BOT_TOKEN or ""
     chat_id = Config.TELEGRAM_CHAT_ID or ""
-
-    def _tg_ok() -> bool:
-        return telegram_enabled and bool(bot_token) and bool(chat_id)
 
     loop = asyncio.get_running_loop()
 
     # 재생 완료 텔레그램 알림
-    if _tg_ok():
+    if Config.should_notify("playback"):
         with suppress(Exception):
             await loop.run_in_executor(
                 None,
@@ -90,7 +86,7 @@ async def _run_post_play_pipeline(course, lec) -> None:
 
         # 요약 완료 시 텔레그램으로 요약 전송
         summary_result = result.get("summary") or {}
-        if _tg_ok() and summary_result.get("status") == "completed":
+        if Config.should_notify("summary") and summary_result.get("status") == "completed":
             summary_path_str = summary_result.get("summary_path", "")
             if summary_path_str:
                 summary_path = Path(summary_path_str)
@@ -119,7 +115,7 @@ async def _run_post_play_pipeline(course, lec) -> None:
                         )
 
     except DownloadUnsupportedError:
-        if _tg_ok():
+        if Config.should_notify("error"):
             with suppress(Exception):
                 await loop.run_in_executor(
                     None,
@@ -134,7 +130,7 @@ async def _run_post_play_pipeline(course, lec) -> None:
         raise
     except Exception as e:
         app_state.auto.error = f"파이프라인 오류: {e}"
-        if _tg_ok():
+        if Config.should_notify("error"):
             with suppress(Exception):
                 await loop.run_in_executor(
                     None,
@@ -178,19 +174,12 @@ async def _run_auto_cycle() -> None:
     # 마감 임박 알림 (텔레그램 설정 시)
     from src.config import Config
 
-    if Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID:
+    if Config.should_notify("deadline"):
         from src.notifier.deadline_checker import check_and_notify_deadlines
 
         loop = asyncio.get_running_loop()
         with suppress(Exception):
-            await loop.run_in_executor(
-                None,
-                check_and_notify_deadlines,
-                courses,
-                details,
-                Config.TELEGRAM_BOT_TOKEN,
-                Config.TELEGRAM_CHAT_ID,
-            )
+            await loop.run_in_executor(None, check_and_notify_deadlines, courses, details)
 
     # 미시청 강의 수집
     pending: list[tuple] = []
@@ -298,7 +287,7 @@ async def _run_auto_cycle() -> None:
                     from src.config import Config
                     from src.notifier import telegram_notifier
 
-                    if Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID:
+                    if Config.should_notify("error"):
                         loop = asyncio.get_running_loop()
                         with suppress(Exception):
                             await loop.run_in_executor(

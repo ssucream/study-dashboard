@@ -252,6 +252,57 @@ async def test_update_settings_can_clear_extra_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_settings_persists_telegram_notify_toggles(monkeypatch):
+    saved = {}
+
+    monkeypatch.setattr(settings_route.db, "set_many", lambda values: saved.update(values))
+    monkeypatch.setattr(Config, "load", lambda: None)
+
+    await settings_route.update_settings(
+        settings_route.SettingsUpdate(
+            TELEGRAM_NOTIFY_PLAYBACK="false",
+            TELEGRAM_NOTIFY_SUMMARY="true",
+            TELEGRAM_NOTIFY_ERROR="false",
+            TELEGRAM_NOTIFY_DEADLINE="true",
+            TELEGRAM_DEADLINE_THRESHOLDS="24, 12 ,bogus,168",
+        )
+    )
+
+    assert saved["TELEGRAM_NOTIFY_PLAYBACK"] == "false"
+    assert saved["TELEGRAM_NOTIFY_ERROR"] == "false"
+    # 내림차순 정규화 + 잘못된 토큰 제거
+    assert saved["TELEGRAM_DEADLINE_THRESHOLDS"] == "168,24,12"
+
+
+@pytest.mark.asyncio
+async def test_update_settings_deadline_thresholds_fallback_to_default(monkeypatch):
+    saved = {}
+
+    monkeypatch.setattr(settings_route.db, "set_many", lambda values: saved.update(values))
+    monkeypatch.setattr(Config, "load", lambda: None)
+
+    await settings_route.update_settings(
+        settings_route.SettingsUpdate(TELEGRAM_DEADLINE_THRESHOLDS="nonsense")
+    )
+
+    assert saved["TELEGRAM_DEADLINE_THRESHOLDS"] == "168,72,24,12"
+
+
+@pytest.mark.asyncio
+async def test_get_settings_returns_telegram_notify_fields():
+    payload = await settings_route.get_settings()
+
+    for key in (
+        "TELEGRAM_NOTIFY_PLAYBACK",
+        "TELEGRAM_NOTIFY_SUMMARY",
+        "TELEGRAM_NOTIFY_ERROR",
+        "TELEGRAM_NOTIFY_DEADLINE",
+        "TELEGRAM_DEADLINE_THRESHOLDS",
+    ):
+        assert key in payload
+
+
+@pytest.mark.asyncio
 async def test_get_ai_models_returns_curated_and_live_catalogs(monkeypatch):
     def fake_catalog(agent, api_key=""):
         return ([{"id": f"{agent}/latest", "name": f"{agent} latest"}], "live" if api_key else "curated")

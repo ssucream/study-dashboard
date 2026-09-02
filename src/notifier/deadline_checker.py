@@ -17,8 +17,8 @@ from src.scraper.models import VIDEO_LECTURE_TYPES, Course, CourseDetail, Lectur
 
 _DEADLINE_FILE = get_data_path("deadline_notified.json")
 
-# 알림 기준 시간 (시간 단위)
-_THRESHOLDS = [24, 12]
+# 대시보드 표시는 전송 시점 설정과 무관하게 항상 7일 이내 전체를 보여준다.
+_DISPLAY_WINDOW_HOURS = 168
 
 _TYPE_LABELS = {
     LectureType.QUIZ: "퀴즈",
@@ -33,12 +33,19 @@ _TYPE_LABELS = {
 
 @dataclass
 class DeadlineItem:
-    """마감 임박 항목."""
+    """마감 임박 항목 (표시용)."""
 
     course: Course
     lecture: LectureItem
     type_label: str
     remaining_hours: float
+
+
+@dataclass
+class DeadlineNotification:
+    """전송 대상 마감 알림 (항목 + 넘어선 알림 시점)."""
+
+    item: DeadlineItem
     threshold: int
     dedup_key: str
 
@@ -107,30 +114,16 @@ def _save_notified(notified: set[str]) -> None:
         print(f"  [경고] deadline_notified.json 저장 실패: {e}", file=sys.stderr)
 
 
-def find_approaching_deadlines(
+def _iter_pending_deadlines(
     courses: list[Course],
     details: list[CourseDetail | None],
-    notified: set[str] | None = None,
-    now: datetime | None = None,
-) -> list[DeadlineItem]:
-    """마감 임박 항목을 검색한다 (순수 로직, 알림 전송 없음).
+    now: datetime,
+):
+    """미완료·비디오 외 강의 중 마감이 남은 항목을 순회한다.
 
-    Args:
-        courses:  과목 목록
-        details:  과목별 강의 상세 (courses와 동일 순서)
-        notified: 이미 알림 전송된 키 집합 (None이면 빈 set)
-        now:      현재 시각 (테스트 시 주입 가능)
-
-    Returns:
-        마감 임박 DeadlineItem 목록
+    Yields:
+        (course, lecture, type_label, remaining_hours)
     """
-    if now is None:
-        now = datetime.now(KST)
-    if notified is None:
-        notified = set()
-
-    items: list[DeadlineItem] = []
-
     for course, detail in zip(courses, details, strict=False):
         if detail is None:
             continue
@@ -157,24 +150,63 @@ def find_approaching_deadlines(
                     continue
 
                 type_label = _TYPE_LABELS.get(lec.lecture_type, lec.lecture_type.value)
+                yield course, lec, type_label, remaining_hours
 
-                for threshold in _THRESHOLDS:
-                    key = _make_dedup_key(course, lec, threshold)
-                    if key in notified:
-                        continue
-                    if remaining_hours <= threshold:
-                        items.append(
-                            DeadlineItem(
-                                course=course,
-                                lecture=lec,
-                                type_label=type_label,
-                                remaining_hours=remaining_hours,
-                                threshold=threshold,
-                                dedup_key=key,
-                            )
-                        )
 
-    return items
+def find_approaching_deadlines(
+    courses: list[Course],
+    details: list[CourseDetail | None],
+    now: datetime | None = None,
+    within_hours: int = _DISPLAY_WINDOW_HOURS,
+) -> list[DeadlineItem]:
+    """표시용: within_hours 이내에 마감되는 강의를 강의당 1건 반환한다.
+
+    알림 전송 여부/시점 설정과 무관하며, 대시보드 목록 표시에 쓰인다.
+    """
+    if now is None:
+        now = datetime.now(KST)
+
+    return [
+        DeadlineItem(course=course, lecture=lec, type_label=type_label, remaining_hours=remaining_hours)
+        for course, lec, type_label, remaining_hours in _iter_pending_deadlines(courses, details, now)
+        if remaining_hours <= within_hours
+    ]
+
+
+def find_deadline_notifications(
+    courses: list[Course],
+    details: list[CourseDetail | None],
+    thresholds: list[int],
+    notified: set[str] | None = None,
+    now: datetime | None = None,
+) -> list[DeadlineNotification]:
+    """전송용: 아직 알리지 않은 (강의, 넘어선 알림 시점) 쌍을 반환한다."""
+    if now is None:
+        now = datetime.now(KST)
+    if notified is None:
+        notified = set()
+
+    result: list[DeadlineNotification] = []
+    for course, lec, type_label, remaining_hours in _iter_pending_deadlines(courses, details, now):
+        for threshold in thresholds:
+            if remaining_hours > threshold:
+                continue
+            key = _make_dedup_key(course, lec, threshold)
+            if key in notified:
+                continue
+            result.append(
+                DeadlineNotification(
+                    item=DeadlineItem(
+                        course=course,
+                        lecture=lec,
+                        type_label=type_label,
+                        remaining_hours=remaining_hours,
+                    ),
+                    threshold=threshold,
+                    dedup_key=key,
+                )
+            )
+    return result
 
 
 def check_and_notify_deadlines(
@@ -185,28 +217,34 @@ def check_and_notify_deadlines(
 ) -> int:
     """마감 임박 항목을 확인하고 텔레그램으로 알림을 전송한다.
 
-    Args:
-        courses:  과목 목록
-        details:  과목별 강의 상세
-        token:    텔레그램 봇 토큰 (빈 문자열이면 전송 건너뜀)
-        chat_id:  텔레그램 Chat ID
+    전송 시점은 Config.get_deadline_thresholds()(사용자 설정)를 따른다.
+    token/chat_id를 생략하면 Config 값을 사용한다.
 
     Returns:
         전송된 알림 수
     """
+    from src.config import Config
+
+    if not Config.should_notify("deadline"):
+        return 0
+
+    token = token or Config.TELEGRAM_BOT_TOKEN or ""
+    chat_id = chat_id or Config.TELEGRAM_CHAT_ID or ""
     if not token or not chat_id:
         return 0
 
     from src.notifier.telegram_notifier import notify_deadline_warning
 
     notified = _load_notified()
-    items = find_approaching_deadlines(courses, details, notified=notified)
-
-    if not items:
+    pending = find_deadline_notifications(
+        courses, details, Config.get_deadline_thresholds(), notified=notified
+    )
+    if not pending:
         return 0
 
     sent_count = 0
-    for item in items:
+    for note in pending:
+        item = note.item
         ok = notify_deadline_warning(
             bot_token=token,
             chat_id=chat_id,
@@ -218,7 +256,7 @@ def check_and_notify_deadlines(
             remaining_hours=item.remaining_hours,
         )
         if ok:
-            notified.add(item.dedup_key)
+            notified.add(note.dedup_key)
             sent_count += 1
 
     if sent_count > 0:

@@ -91,6 +91,30 @@ export function applySettingsVisibility(form = $('#settings-form')) {
   applyAiAgentVisibility(form);
 }
 
+export function applyTelegramVisibility(form = $('#settings-form')) {
+  if (!form) return;
+  const tgEnabled = form.elements.TELEGRAM_ENABLED?.checked ?? state.settings.TELEGRAM_ENABLED === 'true';
+  const deadlineOn = form.elements.TELEGRAM_NOTIFY_DEADLINE?.checked
+    ?? state.settings.TELEGRAM_NOTIFY_DEADLINE === 'true';
+  const notifyOptions = $('#telegram-notify-options');
+  const thresholdOptions = $('#deadline-threshold-options');
+  if (notifyOptions) {
+    notifyOptions.classList.toggle('opacity-50', !tgEnabled);
+    $$('input', notifyOptions).forEach(el => { el.disabled = !tgEnabled; });
+  }
+  if (thresholdOptions) {
+    thresholdOptions.classList.toggle('hidden', !deadlineOn);
+    if (tgEnabled && deadlineOn) $$('input', thresholdOptions).forEach(el => { el.disabled = false; });
+  }
+}
+
+function serializeDeadlineThresholds() {
+  return $$('.deadline-threshold')
+    .filter(el => el.checked)
+    .map(el => el.dataset.thresholdHours)
+    .join(',');
+}
+
 export async function loadAppSettings() {
   const settings = await api('GET', '/api/settings');
   state.settings = { ...state.settings, ...settings };
@@ -130,7 +154,13 @@ export async function loadSettings() {
     }
     const promptExtra = $('#summary-prompt-extra');
     if (promptExtra) promptExtra.value = s.SUMMARY_PROMPT_EXTRA || '';
+
+    // 마감 알림 발송 시점 프리셋 체크박스 복원
+    const thresholds = new Set((s.TELEGRAM_DEADLINE_THRESHOLDS || '').split(',').map(x => x.trim()));
+    $$('.deadline-threshold').forEach(el => { el.checked = thresholds.has(el.dataset.thresholdHours); });
+
     applySettingsVisibility(form);
+    applyTelegramVisibility(form);
     // 리사이즈는 섹션 표시 여부가 확정된 뒤 실행해야 scrollHeight가 올바르게 계산된다.
     requestAnimationFrame(() => {
       if (prompt) autoResizeTextarea(prompt);
@@ -182,10 +212,14 @@ $('#settings-form').addEventListener('submit', async (e) => {
     payload.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = 'false';
   }
 
+  // 마감 알림 발송 시점: 프리셋 체크박스 → CSV. 항상 전송(빈 값이면 백엔드가 기본값 사용).
+  payload.TELEGRAM_DEADLINE_THRESHOLDS = serializeDeadlineThresholds();
+
   try {
     await api('PUT', '/api/settings', payload);
     await loadAppSettings();
     applySettingsVisibility(form);
+    applyTelegramVisibility(form);
     const msg = $('#settings-success');
     msg.classList.remove('hidden');
     setTimeout(() => msg.classList.add('hidden'), 3000);
@@ -197,6 +231,11 @@ $('#settings-form').addEventListener('submit', async (e) => {
 ['DOWNLOAD_ENABLED', 'DOWNLOAD_RULE', 'AUTO_DOWNLOAD_AFTER_PLAY', 'STT_ENABLED', 'AI_ENABLED', 'AI_AGENT'].forEach(name => {
   const el = $('#settings-form').elements[name];
   if (el) el.addEventListener('change', () => applySettingsVisibility());
+});
+
+['TELEGRAM_ENABLED', 'TELEGRAM_NOTIFY_DEADLINE'].forEach(name => {
+  const el = $('#settings-form').elements[name];
+  if (el) el.addEventListener('change', () => applyTelegramVisibility());
 });
 
 $('#btn-telegram-test')?.addEventListener('click', async () => {

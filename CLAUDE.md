@@ -142,6 +142,11 @@ CREATE TABLE settings (
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 (암호화) | — |
 | `TELEGRAM_CHAT_ID` | 텔레그램 채팅 ID | — |
 | `TELEGRAM_AUTO_DELETE` | 전송 후 파일 자동 삭제 | `true` / `false` |
+| `TELEGRAM_NOTIFY_PLAYBACK` | 재생 완료 알림 발송 여부 | `true` / `false` |
+| `TELEGRAM_NOTIFY_SUMMARY` | 요약 내용 발송 여부 | `true` / `false` |
+| `TELEGRAM_NOTIFY_ERROR` | 오류 발생 알림 발송 여부 | `true` / `false` |
+| `TELEGRAM_NOTIFY_DEADLINE` | 마감 임박 알림 발송 여부 | `true` / `false` |
+| `TELEGRAM_DEADLINE_THRESHOLDS` | 마감 알림 발송 시점 (마감 전, 시간 단위 CSV) | `168,72,24,12` |
 | `AUTO_ENABLED` | 자동 모드 지속 상태 (앱이 관리, 재로그인 시 복원용) — `자동 모드 중지` 버튼으로만 `false`가 되며 로그아웃·재시작은 유지 | `true` / `false` |
 | `AUTO_SCHEDULE_HOURS` | 자동 모드 스케줄 시각 (CSV, 앱이 관리) | `9,13,18,23` |
 

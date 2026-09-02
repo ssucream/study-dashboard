@@ -53,6 +53,36 @@ def _read_version() -> str:
 
 APP_VERSION = _read_version()
 
+# 텔레그램 알림 카테고리 → Config 필드 매핑. 신규 카테고리 추가 시 이 dict만 확장.
+_NOTIFY_CATEGORY_ATTR = {
+    "playback": "TELEGRAM_NOTIFY_PLAYBACK",
+    "summary": "TELEGRAM_NOTIFY_SUMMARY",
+    "error": "TELEGRAM_NOTIFY_ERROR",
+    "deadline": "TELEGRAM_NOTIFY_DEADLINE",
+}
+
+# 마감 알림 발송 시점 기본값 (시간 단위 CSV): 7일 / 3일 / 1일 / 12시간 전
+_DEFAULT_DEADLINE_THRESHOLDS = "168,72,24,12"
+
+
+def parse_deadline_thresholds(raw: str | None) -> list[int]:
+    """마감 알림 시점 CSV를 양의 정수(시간) 내림차순 리스트로 정규화한다.
+
+    비거나 유효한 값이 하나도 없으면 기본값을 반환한다.
+    """
+    hours = sorted(
+        {
+            int(tok)
+            for tok in (raw or "").split(",")
+            if tok.strip().lstrip("-").isdigit() and int(tok) > 0
+        },
+        reverse=True,
+    )
+    if hours:
+        return hours
+    return sorted({int(x) for x in _DEFAULT_DEADLINE_THRESHOLDS.split(",")}, reverse=True)
+
+
 _DOWNLOAD_RULE_ALIASES = {
     "": "mp4",
     "video": "mp4",
@@ -110,6 +140,13 @@ class Config:
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     TELEGRAM_AUTO_DELETE: str = ""
+    # 알림 카테고리별 ON/OFF (기본 켜짐 — 기존 사용자 동작 유지)
+    TELEGRAM_NOTIFY_PLAYBACK: str = "true"
+    TELEGRAM_NOTIFY_SUMMARY: str = "true"
+    TELEGRAM_NOTIFY_ERROR: str = "true"
+    TELEGRAM_NOTIFY_DEADLINE: str = "true"
+    # 마감 알림 발송 시점 (시간 단위 CSV)
+    TELEGRAM_DEADLINE_THRESHOLDS: str = _DEFAULT_DEADLINE_THRESHOLDS
     # 자동 모드 지속 상태 — 백엔드 재시작 후 재로그인 시 자동 모드를 복원하기 위해 DB에 보관.
     # 사용자가 '자동 모드 중지'나 로그아웃을 하면 false로 저장된다.
     AUTO_ENABLED: str = ""
@@ -156,6 +193,13 @@ class Config:
         cls.TELEGRAM_ENABLED = db.get("TELEGRAM_ENABLED", "")
         cls.TELEGRAM_CHAT_ID = db.get("TELEGRAM_CHAT_ID", "")
         cls.TELEGRAM_AUTO_DELETE = db.get("TELEGRAM_AUTO_DELETE", "")
+        cls.TELEGRAM_NOTIFY_PLAYBACK = db.get("TELEGRAM_NOTIFY_PLAYBACK", "true")
+        cls.TELEGRAM_NOTIFY_SUMMARY = db.get("TELEGRAM_NOTIFY_SUMMARY", "true")
+        cls.TELEGRAM_NOTIFY_ERROR = db.get("TELEGRAM_NOTIFY_ERROR", "true")
+        cls.TELEGRAM_NOTIFY_DEADLINE = db.get("TELEGRAM_NOTIFY_DEADLINE", "true")
+        cls.TELEGRAM_DEADLINE_THRESHOLDS = db.get(
+            "TELEGRAM_DEADLINE_THRESHOLDS", _DEFAULT_DEADLINE_THRESHOLDS
+        )
         cls.AUTO_ENABLED = db.get("AUTO_ENABLED", "false")
         cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
 
@@ -187,6 +231,24 @@ class Config:
         if not cls.TELEGRAM_BOT_TOKEN or not cls.TELEGRAM_CHAT_ID:
             return None
         return cls.TELEGRAM_BOT_TOKEN, cls.TELEGRAM_CHAT_ID
+
+    @classmethod
+    def should_notify(cls, category: str) -> bool:
+        """텔레그램이 완전히 설정되고 해당 알림 카테고리가 켜져 있으면 True.
+
+        category: 'playback' / 'summary' / 'error' / 'deadline'
+        """
+        if cls.get_telegram_credentials() is None:
+            return False
+        attr = _NOTIFY_CATEGORY_ATTR.get(category)
+        if attr is None:
+            return True
+        return getattr(cls, attr, "true") == "true"
+
+    @classmethod
+    def get_deadline_thresholds(cls) -> list[int]:
+        """마감 알림 발송 시점(시간)을 내림차순으로 반환한다."""
+        return parse_deadline_thresholds(cls.TELEGRAM_DEADLINE_THRESHOLDS)
 
     @classmethod
     def has_settings(cls) -> bool:

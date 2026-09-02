@@ -710,6 +710,61 @@
                   <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
                 </label>
               </div>
+
+              <!-- 알림 종류별 ON/OFF -->
+              <div id="telegram-notify-options" class="flex flex-col gap-3 pt-3 border-t border-slate-700">
+                <span class="text-xs text-slate-400 uppercase tracking-wider">알림 종류</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-300">재생 완료 알림</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="TELEGRAM_NOTIFY_PLAYBACK" class="sr-only peer" />
+                    <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+                  </label>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-300">요약 내용 발송</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="TELEGRAM_NOTIFY_SUMMARY" class="sr-only peer" />
+                    <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+                  </label>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-300">오류 발생 알림</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="TELEGRAM_NOTIFY_ERROR" class="sr-only peer" />
+                    <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+                  </label>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-slate-300">마감 임박 알림</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="TELEGRAM_NOTIFY_DEADLINE" class="sr-only peer" />
+                    <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+                  </label>
+                </div>
+                <div id="deadline-threshold-options" class="flex flex-col gap-2 pl-3 border-l-2 border-slate-700">
+                  <span class="text-xs text-slate-400">발송 시점 (마감 전)</span>
+                  <div class="flex flex-wrap gap-3">
+                    <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+                      <input type="checkbox" class="deadline-threshold accent-indigo-500" data-threshold-hours="168" /> 7일 전
+                    </label>
+                    <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+                      <input type="checkbox" class="deadline-threshold accent-indigo-500" data-threshold-hours="72" /> 3일 전
+                    </label>
+                    <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+                      <input type="checkbox" class="deadline-threshold accent-indigo-500" data-threshold-hours="24" /> 1일 전
+                    </label>
+                    <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+                      <input type="checkbox" class="deadline-threshold accent-indigo-500" data-threshold-hours="12" /> 12시간 전
+                    </label>
+                    <label class="flex items-center gap-1.5 text-sm text-slate-300 cursor-pointer">
+                      <input type="checkbox" class="deadline-threshold accent-indigo-500" data-threshold-hours="6" /> 6시간 전
+                    </label>
+                  </div>
+                  <input type="hidden" name="TELEGRAM_DEADLINE_THRESHOLDS" />
+                </div>
+              </div>
+
               <div class="flex items-center gap-3">
                 <button type="button" id="btn-telegram-test"
                   class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium rounded-xl transition-all">

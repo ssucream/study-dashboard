@@ -72,7 +72,7 @@ async def _notify_playback_complete(course_name: str, week_label: str, lecture_t
     from src.config import Config
     from src.notifier import telegram_notifier
 
-    if not (Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID):
+    if not Config.should_notify("playback"):
         return
     with suppress(Exception):
         await asyncio.get_running_loop().run_in_executor(
@@ -93,7 +93,7 @@ async def _notify_playback_error(course_name: str, week_label: str, lecture_titl
     from src.config import Config
     from src.notifier import telegram_notifier
 
-    if not (Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID):
+    if not Config.should_notify("error"):
         return
     with suppress(Exception):
         await asyncio.get_running_loop().run_in_executor(

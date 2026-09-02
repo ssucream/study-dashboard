@@ -21,16 +21,16 @@ async def check_deadlines():
     await ensure_courses_loaded()
 
     from src.config import Config
-    from src.notifier.deadline_checker import _load_notified, find_approaching_deadlines
+    from src.notifier.deadline_checker import find_approaching_deadlines
 
     loop = asyncio.get_running_loop()
-    notified = await loop.run_in_executor(None, _load_notified)
-    items = find_approaching_deadlines(app_state.courses, app_state.details, notified=notified)
+    # 표시는 전송 시점 설정과 무관하게 항상 7일 이내 전체.
+    items = await loop.run_in_executor(
+        None, find_approaching_deadlines, app_state.courses, app_state.details
+    )
 
     sent_count = 0
-    telegram_enabled = (
-        Config.TELEGRAM_ENABLED == "true" and bool(Config.TELEGRAM_BOT_TOKEN) and bool(Config.TELEGRAM_CHAT_ID)
-    )
+    telegram_enabled = Config.should_notify("deadline")
     if telegram_enabled:
         from src.notifier.deadline_checker import check_and_notify_deadlines
 
@@ -39,8 +39,6 @@ async def check_deadlines():
             check_and_notify_deadlines,
             app_state.courses,
             app_state.details,
-            Config.TELEGRAM_BOT_TOKEN or "",
-            Config.TELEGRAM_CHAT_ID or "",
         )
 
     return {
@@ -54,7 +52,6 @@ async def check_deadlines():
                 "type": item.type_label,
                 "end_date": item.lecture.end_date,
                 "remaining_hours": round(item.remaining_hours, 1),
-                "threshold": item.threshold,
             }
             for item in items
         ],

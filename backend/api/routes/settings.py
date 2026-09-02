@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src import db, event_log
-from src.config import Config, normalize_download_rule
+from src.config import Config, normalize_download_rule, parse_deadline_thresholds
 from src.crypto import encrypt
 from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog
 
@@ -57,6 +57,11 @@ async def get_settings():
         "TELEGRAM_CHAT_ID": Config.TELEGRAM_CHAT_ID,
         "TELEGRAM_AUTO_DELETE": Config.TELEGRAM_AUTO_DELETE,
         "HAS_TELEGRAM_BOT_TOKEN": bool(Config.TELEGRAM_BOT_TOKEN),
+        "TELEGRAM_NOTIFY_PLAYBACK": Config.TELEGRAM_NOTIFY_PLAYBACK,
+        "TELEGRAM_NOTIFY_SUMMARY": Config.TELEGRAM_NOTIFY_SUMMARY,
+        "TELEGRAM_NOTIFY_ERROR": Config.TELEGRAM_NOTIFY_ERROR,
+        "TELEGRAM_NOTIFY_DEADLINE": Config.TELEGRAM_NOTIFY_DEADLINE,
+        "TELEGRAM_DEADLINE_THRESHOLDS": ",".join(str(h) for h in Config.get_deadline_thresholds()),
     }
 
 
@@ -84,6 +89,11 @@ class SettingsUpdate(BaseModel):
     TELEGRAM_BOT_TOKEN: str | None = None
     TELEGRAM_CHAT_ID: str | None = None
     TELEGRAM_AUTO_DELETE: str | None = None
+    TELEGRAM_NOTIFY_PLAYBACK: str | None = None
+    TELEGRAM_NOTIFY_SUMMARY: str | None = None
+    TELEGRAM_NOTIFY_ERROR: str | None = None
+    TELEGRAM_NOTIFY_DEADLINE: str | None = None
+    TELEGRAM_DEADLINE_THRESHOLDS: str | None = None
 
 
 @router.post("/telegram/test")
@@ -112,6 +122,8 @@ async def update_settings(body: SettingsUpdate):
     for key, val in body.model_dump(exclude_none=True).items():
         if key == "DOWNLOAD_RULE":
             val = normalize_download_rule(val)
+        elif key == "TELEGRAM_DEADLINE_THRESHOLDS":
+            val = ",".join(str(h) for h in parse_deadline_thresholds(val))
         to_save[key] = encrypt(val) if key in _SENSITIVE and val else val
 
     download_enabled = to_save.get("DOWNLOAD_ENABLED", Config.DOWNLOAD_ENABLED) == "true"

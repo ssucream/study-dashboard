@@ -27,7 +27,7 @@ async def _notify_summary_complete(
 
     from src.notifier import telegram_notifier
 
-    if not (Config.TELEGRAM_ENABLED == "true" and Config.TELEGRAM_BOT_TOKEN and Config.TELEGRAM_CHAT_ID):
+    if not Config.should_notify("summary"):
         return
 
     summary_path_str = summary_result.get("summary_path", "")

@@ -198,7 +198,9 @@ def notify_deadline_warning(
     remaining_hours: float,
 ) -> bool:
     """마감 임박 알림을 전송한다."""
-    if remaining_hours >= 1:
+    if remaining_hours >= 48:
+        time_text = f"약 {int(remaining_hours // 24)}일 남음"
+    elif remaining_hours >= 1:
         time_text = f"약 {int(remaining_hours)}시간 남음"
     else:
         time_text = f"약 {int(remaining_hours * 60)}분 남음"
