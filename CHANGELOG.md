@@ -2,6 +2,34 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.8.10] - 2026-09-02
+
+### Fixed
+
+- **로그인 직후 자동 마감 체크가 첫 로그인에서 조용히 건너뛰던 문제**: `showApp()`이 설정 로드
+  직후 `POST /api/deadline/check`를 호출하는데, 이 시점엔 대시보드 과목 스크래핑(`loadStats`)이
+  아직 진행 중이라 백엔드가 409를 반환했고, 프론트가 이를 `.catch`로 삼킨 뒤 `deadlineChecked`를
+  `true`로 못박아 그 세션 내내 재시도하지 않았다. 자동 모드를 쓰지 않는 사용자에겐 로그인 시
+  마감 알림 기능이 사실상 동작하지 않았다.
+  - `deadline.check_deadlines()`가 과목 미로드 시 직접 로드하도록 변경. `get_courses`·`get_stats`에
+    중복돼 있던 "없으면 스크래핑" 로직을 `courses.ensure_courses_loaded()` 헬퍼로 추출하고,
+    `_courses_load_lock`으로 대시보드 로드와 동시에 실행돼도 스크래핑이 한 번만 일어나도록
+    직렬화 (`backend/api/routes/courses.py`, `backend/api/routes/deadline.py`)
+  - 프론트: `deadlineChecked`를 호출 성공 시에만 `true`로 설정 → 일시적 503이면 다음 로그인에
+    재시도 (`frontend/js/app.js`)
+
+### Removed
+
+- `docs/spec-gap-analysis.md` — study-helper(TUI) 대비 미이식·미구현 기능 목록(2026-06-20 작성).
+  11개 항목이 모두 이식·구현 완료되어(1-A~1-D는 2026-06-20, 2-A~2-G는 v26.7.0) 문서의 역할이
+  끝났다. 유일하게 실질적으로 남아 있던 2-A(로그인 후 자동 마감 체크 레이스)는 위 Fixed 항목으로
+  처리. WebSocket "변경 시에만 push"(2-G)는 단일 사용자 로컬 도구에 불필요하다고 판단해 제외.
+
+### Tests
+
+- `tests/test_web_deadline.py` 신규 — 과목 미로드 시 자체 로드 / 로드된 경우 재스크래핑 안 함 /
+  스크래핑 실패 시 503
+
 ## [v26.8.9] - 2026-09-01
 
 ### Added
