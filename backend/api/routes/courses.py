@@ -13,22 +13,33 @@ router = APIRouter()
 _courses_load_lock = asyncio.Lock()
 
 
+async def ensure_courses_loaded() -> None:
+    """app_state에 과목·상세 목록이 없으면 스크래핑해 채운다. 이미 있으면 아무것도 하지 않는다.
+
+    로그인 직후처럼 여러 라우트(대시보드 통계, 마감 체크 등)가 동시에 첫 로드를
+    요청해도 `_courses_load_lock`으로 스크래핑이 한 번만 일어나도록 직렬화한다.
+    """
+    if app_state.courses and app_state.details:
+        return
+    async with _courses_load_lock:
+        if app_state.courses and app_state.details:
+            return
+        try:
+            courses = await app_state.scraper.fetch_courses()
+            details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"강의 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. ({type(e).__name__})",
+            ) from e
+        app_state.courses = courses
+        app_state.details = details
+
+
 @router.get("")
 async def get_courses():
     require_auth()
-
-    async with _courses_load_lock:
-        if not app_state.courses:
-            try:
-                courses = await app_state.scraper.fetch_courses()
-                details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
-                app_state.courses = courses
-                app_state.details = details
-            except Exception as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"강의 정보를 불러오지 못했습니다. ({type(e).__name__})",
-                ) from e
+    await ensure_courses_loaded()
 
     result = []
     for i, course in enumerate(app_state.courses):
@@ -50,20 +61,7 @@ async def get_courses():
 @router.get("/stats")
 async def get_stats():
     require_auth()
-
-    if not app_state.details:
-        async with _courses_load_lock:
-            if not app_state.details:
-                try:
-                    courses = await app_state.scraper.fetch_courses()
-                    details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
-                    app_state.courses = courses
-                    app_state.details = details
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=f"강의 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. ({type(e).__name__})",
-                    ) from e
+    await ensure_courses_loaded()
 
     total = sum(d.total_video_count for d in app_state.details if d)
     completed = sum(d.total_video_count - d.pending_video_count for d in app_state.details if d)

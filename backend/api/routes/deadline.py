@@ -3,22 +3,22 @@
 import asyncio
 
 from backend.api.auth_dep import require_auth
+from backend.api.routes.courses import ensure_courses_loaded
 from backend.api.state import app_state
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 router = APIRouter()
 
 
 @router.post("/check")
 async def check_deadlines():
-    """미완료 과제·퀴즈 중 마감 임박 항목을 조회하고, 텔레그램이 설정된 경우 알림을 전송한다."""
-    require_auth()
+    """미완료 과제·퀴즈 중 마감 임박 항목을 조회하고, 텔레그램이 설정된 경우 알림을 전송한다.
 
-    if not app_state.courses or not app_state.details:
-        raise HTTPException(
-            status_code=409,
-            detail="강의 목록이 로드되지 않았습니다. 과목 목록을 먼저 불러오세요.",
-        )
+    로그인 직후 프론트가 자동 호출하므로, 과목 목록이 아직 로드되지 않았으면
+    여기서 직접 로드한다(대시보드 통계 로드와 락으로 직렬화됨).
+    """
+    require_auth()
+    await ensure_courses_loaded()
 
     from src.config import Config
     from src.notifier.deadline_checker import _load_notified, find_approaching_deadlines

@@ -81,8 +81,9 @@ function showApp(userId) {
     .then(s => {
       _checkSettingsBanner(s);
       if (!state.deadlineChecked) {
-        state.deadlineChecked = true;
-        api('POST', '/api/deadline/check').catch(() => {});
+        api('POST', '/api/deadline/check')
+          .then(() => { state.deadlineChecked = true; })
+          .catch(() => {});
       }
     })
     .catch(() => {});
