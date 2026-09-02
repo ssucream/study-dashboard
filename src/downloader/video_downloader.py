@@ -317,6 +317,10 @@ def _stream_download(
     existing_size = 0
 
     # 재시도 시 기존 파일이 있으면 이어받기 시도
+    # TODO(미검증): 재시도 사이에 CDN 서명 URL이 만료되면 서버가 '다른' 리소스로 206을
+    # 응답할 수 있어 이어붙인 mp4가 손상될 수 있다. If-Range(ETag/Last-Modified)나
+    # Content-Range 총 길이 검증을 붙이는 게 안전하나, 실제 Learning X CDN 동작을
+    # 재현하기 전까지는 추정 단계라 보류. (구 docs/code-review-followup.md의 유일한 미해결 항목)
     if attempt > 1 and save_path.exists():
         existing_size = save_path.stat().st_size
         if existing_size > 0:
