@@ -71,11 +71,7 @@ def parse_deadline_thresholds(raw: str | None) -> list[int]:
     비거나 유효한 값이 하나도 없으면 기본값을 반환한다.
     """
     hours = sorted(
-        {
-            int(tok)
-            for tok in (raw or "").split(",")
-            if tok.strip().lstrip("-").isdigit() and int(tok) > 0
-        },
+        {int(tok) for tok in (raw or "").split(",") if tok.strip().lstrip("-").isdigit() and int(tok) > 0},
         reverse=True,
     )
     if hours:
@@ -197,9 +193,7 @@ class Config:
         cls.TELEGRAM_NOTIFY_SUMMARY = db.get("TELEGRAM_NOTIFY_SUMMARY", "true")
         cls.TELEGRAM_NOTIFY_ERROR = db.get("TELEGRAM_NOTIFY_ERROR", "true")
         cls.TELEGRAM_NOTIFY_DEADLINE = db.get("TELEGRAM_NOTIFY_DEADLINE", "true")
-        cls.TELEGRAM_DEADLINE_THRESHOLDS = db.get(
-            "TELEGRAM_DEADLINE_THRESHOLDS", _DEFAULT_DEADLINE_THRESHOLDS
-        )
+        cls.TELEGRAM_DEADLINE_THRESHOLDS = db.get("TELEGRAM_DEADLINE_THRESHOLDS", _DEFAULT_DEADLINE_THRESHOLDS)
         cls.AUTO_ENABLED = db.get("AUTO_ENABLED", "false")
         cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
 

@@ -57,9 +57,7 @@ def test_find_approaching_returns_one_item_per_lecture_within_window():
 
 
 def test_find_approaching_ignores_video_lectures():
-    video = LectureItem(
-        title="영상", item_url="/v", lecture_type=LectureType.MOVIE, end_date="3월 16일 오후 1:00"
-    )
+    video = LectureItem(title="영상", item_url="/v", lecture_type=LectureType.MOVIE, end_date="3월 16일 오후 1:00")
     detail = _detail(video)
     assert dc.find_approaching_deadlines([detail.course], [detail], now=_NOW) == []
 
@@ -69,9 +67,7 @@ def test_find_approaching_ignores_video_lectures():
 
 def test_find_deadline_notifications_only_crossed_thresholds():
     detail = _detail(_quiz("사흘", "3월 18일 오후 11:59"))  # ~84h 남음
-    notes = dc.find_deadline_notifications(
-        [detail.course], [detail], thresholds=[168, 72, 24], now=_NOW
-    )
+    notes = dc.find_deadline_notifications([detail.course], [detail], thresholds=[168, 72, 24], now=_NOW)
     # 84h <= 168 만 충족 (84 > 72, 84 > 24)
     assert [n.threshold for n in notes] == [168]
 
@@ -80,9 +76,7 @@ def test_find_deadline_notifications_skips_already_notified():
     detail = _detail(_quiz("사흘", "3월 18일 오후 11:59"))
     first = dc.find_deadline_notifications([detail.course], [detail], thresholds=[168], now=_NOW)
     notified = {first[0].dedup_key}
-    again = dc.find_deadline_notifications(
-        [detail.course], [detail], thresholds=[168], notified=notified, now=_NOW
-    )
+    again = dc.find_deadline_notifications([detail.course], [detail], thresholds=[168], notified=notified, now=_NOW)
     assert again == []
 
 
@@ -94,7 +88,12 @@ def telegram_ready(monkeypatch):
     monkeypatch.setattr(Config, "TELEGRAM_ENABLED", "true")
     monkeypatch.setattr(Config, "TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setattr(Config, "TELEGRAM_CHAT_ID", "chat")
-    for attr in ("TELEGRAM_NOTIFY_PLAYBACK", "TELEGRAM_NOTIFY_SUMMARY", "TELEGRAM_NOTIFY_ERROR", "TELEGRAM_NOTIFY_DEADLINE"):
+    for attr in (
+        "TELEGRAM_NOTIFY_PLAYBACK",
+        "TELEGRAM_NOTIFY_SUMMARY",
+        "TELEGRAM_NOTIFY_ERROR",
+        "TELEGRAM_NOTIFY_DEADLINE",
+    ):
         monkeypatch.setattr(Config, attr, "true")
 
 

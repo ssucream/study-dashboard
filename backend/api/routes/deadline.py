@@ -25,9 +25,7 @@ async def check_deadlines():
 
     loop = asyncio.get_running_loop()
     # 표시는 전송 시점 설정과 무관하게 항상 7일 이내 전체.
-    items = await loop.run_in_executor(
-        None, find_approaching_deadlines, app_state.courses, app_state.details
-    )
+    items = await loop.run_in_executor(None, find_approaching_deadlines, app_state.courses, app_state.details)
 
     sent_count = 0
     telegram_enabled = Config.should_notify("deadline")

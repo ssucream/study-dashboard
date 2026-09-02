@@ -281,9 +281,7 @@ async def test_update_settings_deadline_thresholds_fallback_to_default(monkeypat
     monkeypatch.setattr(settings_route.db, "set_many", lambda values: saved.update(values))
     monkeypatch.setattr(Config, "load", lambda: None)
 
-    await settings_route.update_settings(
-        settings_route.SettingsUpdate(TELEGRAM_DEADLINE_THRESHOLDS="nonsense")
-    )
+    await settings_route.update_settings(settings_route.SettingsUpdate(TELEGRAM_DEADLINE_THRESHOLDS="nonsense"))
 
     assert saved["TELEGRAM_DEADLINE_THRESHOLDS"] == "168,72,24,12"
 

@@ -236,9 +236,7 @@ def check_and_notify_deadlines(
     from src.notifier.telegram_notifier import notify_deadline_warning
 
     notified = _load_notified()
-    pending = find_deadline_notifications(
-        courses, details, Config.get_deadline_thresholds(), notified=notified
-    )
+    pending = find_deadline_notifications(courses, details, Config.get_deadline_thresholds(), notified=notified)
     if not pending:
         return 0
 
