@@ -49,7 +49,6 @@ node_modules/
 plan.md
 plan-*.md
 research.md
-docs/web-gui-plan.md
 .omx/
 # Local HTTPS certificates
 certs/*

@@ -8,10 +8,8 @@ requests로 청크 스트리밍 다운로드한다.
 import asyncio
 import logging
 import re
-import time
 from collections.abc import Callable
 from functools import partial
-from http.client import IncompleteRead
 from pathlib import Path
 
 import requests
@@ -260,48 +258,6 @@ async def download_video_with_browser(
             if attempt < _MAX_RETRIES:
                 await asyncio.sleep(2**attempt)
     _remove_partial(save_path)
-    raise last_error
-
-
-def download_video(
-    url: str,
-    save_path: Path,
-    on_progress: Callable[[int, int], None] | None = None,
-    cookies: dict | None = None,
-    referer: str | None = None,
-) -> Path:
-    """
-    HTTP 스트리밍으로 영상을 다운로드한다.
-
-    Args:
-        url:         직접 다운로드 가능한 mp4 URL
-        save_path:   저장 경로 (파일명 포함)
-        on_progress: (downloaded_bytes, total_bytes) 콜백
-
-    Returns:
-        저장된 파일의 Path
-
-    Raises:
-        Exception: 최대 재시도 후에도 실패한 경우
-    """
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-
-    last_error = None
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            _stream_download(url, save_path, on_progress, attempt, cookies=cookies, referer=referer)
-            return save_path.resolve()
-        except (IncompleteRead, requests.exceptions.ChunkedEncodingError) as e:
-            last_error = e
-            _remove_partial(save_path)
-            if attempt < _MAX_RETRIES:
-                wait = 2**attempt
-                time.sleep(wait)
-        except Exception as e:
-            last_error = e
-            _remove_partial(save_path)
-            break
-
     raise last_error
 
 

@@ -7,9 +7,6 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     # 브라우저 자동화 (로그인, 스크래핑, 백그라운드 재생)
     "playwright>=1.52.0",
-    # CUI 인터페이스
-    "rich>=13.0.0",
-    "click>=8.0.0",
     # 영상/음성 다운로드 (청크 스트리밍)
     "requests>=2.32.0",
     # STT — faster-whisper (CTranslate2 기반, torch 불필요)
@@ -31,9 +28,6 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
 ]
-
-[project.scripts]
-study-dashboard = "src.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

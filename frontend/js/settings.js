@@ -91,7 +91,7 @@ export function applySettingsVisibility(form = $('#settings-form')) {
   applyAiAgentVisibility(form);
 }
 
-export function applyTelegramVisibility(form = $('#settings-form')) {
+function applyTelegramVisibility(form = $('#settings-form')) {
   if (!form) return;
   const tgEnabled = form.elements.TELEGRAM_ENABLED?.checked ?? state.settings.TELEGRAM_ENABLED === 'true';
   const deadlineOn = form.elements.TELEGRAM_NOTIFY_DEADLINE?.checked
