@@ -2,6 +2,39 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.9.2] - 2026-09-03
+
+### Removed
+
+- **TUI(CUI) 잔재 코드 일괄 제거**: 웹 대시보드 전환이 끝난 뒤에도 실행 경로 없이 남아 있던
+  CUI 레이어를 삭제. 각 기능은 이미 `backend/api/routes/*`로 재구현돼 있어 동작 변화 없음.
+  - `src/main.py`, `src/ui/` 전체(`auto`·`courses`·`download`·`login`·`player`·`settings`) —
+    구 진입점·화면 모듈. `backend`·`tests` 어디서도 import되지 않음
+  - `pyproject.toml` — `rich`(CUI 렌더링 전용)·`click`(코드에서 미사용) 런타임 의존성과
+    죽은 `[project.scripts]` 엔트리포인트 (`uv.lock` 재생성)
+  - `src/config.py` — `Config.save_settings()`·`save_telegram()`·`_save_settings_values()`·
+    `has_settings()`·`is_auto_download_after_play_enabled()` (구 TUI 설정 저장 경로. 웹은
+    `backend/api/routes/settings.py`가 `db.set_many()`를 직접 호출). 이에 따라 미사용이 된
+    `crypto.encrypt` import도 정리
+  - `src/downloader/video_downloader.py` — 동기 `download_video()` (파이프라인은 async
+    `download_video_with_browser()`만 사용) 및 미사용 import `time`·`IncompleteRead`
+
+### Changed
+
+- **문서를 현재 웹 대시보드 구조에 맞게 최신화**:
+  - `README.md`·`CLAUDE.md`의 "프로젝트 구조" 섹션을 실제 `backend/` + `src/` + `frontend/js/`
+    구조로 교체 (존재하지 않는 `backend/core`·`frontend/src/pages`·`data/` 경로와 TUI 화면
+    나열을 제거)
+  - `CLAUDE.md` 제목·설명: `study-helper` / `CUI 환경` → `study-dashboard` / `웹 대시보드`,
+    "절대 건드리면 안 되는 것들"·"설계 의도"의 파일 경로를 웹 구조 기준으로 갱신
+  - `docs/telegram-setup.md` — 구 TUI 메뉴 안내를 웹 설정 화면 안내로 통일, `data/app.db` → `db/app.db`
+  - `README.md` 주의사항의 `data/app.db` → `db/app.db`
+  - `frontend/js/settings.js` — 파일 내부에서만 쓰이는 `applyTelegramVisibility`의 불필요한 `export` 제거
+
+### Tests
+
+- 테스트 파일 변경 없음. 삭제한 코드에 연결된 테스트가 없었으며 기존 190개 전부 통과.
+
 ## [v26.9.1] - 2026-09-02
 
 ### Fixed
