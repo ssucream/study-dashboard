@@ -85,20 +85,34 @@
 
 ```
 study-dashboard/
-├── backend/
-│   ├── api/              # REST / WebSocket 라우터
-│   ├── core/             # 설정, 인증, 암호화
-│   ├── scraper/          # 과목·강의 스크래핑
-│   ├── player/           # 백그라운드 재생
-│   ├── converter/        # mp4 → mp3 (ffmpeg)
-│   ├── stt/              # faster-whisper STT
-│   └── summarizer/       # AI 요약
-├── frontend/
-│   └── src/
-│       ├── pages/        # Login, Semesters, Courses, Summary
-│       └── components/
-├── data/
-│   └── summaries/        # 마크다운 요약 파일 저장 경로
+├── backend/                 # FastAPI REST/WebSocket API 서비스
+│   ├── main.py              # 앱 진입점 (라우터 등록, lifespan)
+│   └── api/
+│       ├── routes/          # auth·courses·player·auto·settings·summaries·tasks·logs·deadline·ws
+│       ├── task_manager.py  # 백그라운드 Task 생명주기 + SQLite 영속화
+│       ├── summary_store.py # 요약 마크다운 파일 저장/조회
+│       └── state.py         # 로그인 세션(scraper) 싱글턴
+├── src/                     # 도메인 로직 (backend가 import)
+│   ├── config.py            # 설정 로드/저장 (SQLite)
+│   ├── crypto.py            # 계정·API 키 암호화
+│   ├── db.py                # SQLite 초기화/마이그레이션
+│   ├── event_log.py         # 행위 로그
+│   ├── updater.py           # GitHub 최신 버전 확인
+│   ├── auth/                # Playwright 로그인
+│   ├── scraper/             # 과목·주차·강의 스크래핑
+│   ├── player/              # 백그라운드 재생 (출석)
+│   ├── downloader/          # 영상 URL 추출 + 다운로드 파이프라인
+│   ├── converter/           # mp4 → mp3 (ffmpeg)
+│   ├── stt/                 # faster-whisper STT
+│   ├── summarizer/          # AI 요약 (Gemini / OpenAI / OpenRouter)
+│   └── notifier/            # 텔레그램 알림 + 마감 체커
+├── frontend/                # nginx 정적 서빙 + /api 프록시 (HTTPS)
+│   ├── index.html
+│   └── js/                  # 바닐라 ES 모듈 (app, api, state, settings, modals, summaries, logs, markdown, utils)
+├── db/                      # 설정 DB(app.db) — 볼륨 마운트
+├── downloads/               # mp4·mp3·txt·요약 산출물 — 볼륨 마운트
+├── certs/                   # 로컬 HTTPS 인증서
+├── docs/                    # 기술 문서
 └── docker-compose.yml
 ```
 
@@ -228,7 +242,7 @@ Learning X 구조 분석, 재생/다운로드 구현 방식, 셀렉터 정의 �
 - 본 서비스는 개인 학습 목적으로만 사용하세요.
 - Learning X 서비스 약관을 준수하여 사용하시기 바랍니다.
 - 학번, 비밀번호는 현재 로그인 세션 메모리에만 유지되며 DB에 저장되지 않습니다.
-- `.secret_key`와 `data/app.db`는 절대 외부에 공유하지 마세요.
+- `.secret_key`와 `db/app.db`는 절대 외부에 공유하지 마세요.
 
 ### 면책 조항
 

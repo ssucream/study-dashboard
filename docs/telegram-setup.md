@@ -16,7 +16,7 @@
 1234567890:ABCdefGHIjklMNOpqrSTUVwxyz
 ```
 
-이 토큰을 복사해 study-helper 설정에 입력합니다.
+이 토큰을 복사해 대시보드 설정에 입력합니다.
 
 > 봇 토큰은 외부에 노출되지 않도록 주의하세요.
 
@@ -65,12 +65,10 @@ https://api.telegram.org/bot<TOKEN>/getUpdates
 
 ---
 
-## 3. study-helper에 등록
+## 3. 대시보드에 등록
 
-과목 목록 화면에서 `setting` 입력 → **텔레그램 알림 설정** 선택 후 봇 토큰과 Chat ID를 입력합니다.
-
-웹 대시보드에서는 **설정 → 텔레그램 알림**에서 값을 저장합니다. 설정값은 SQLite DB(`data/app.db`)에 저장되며,
-봇 토큰은 암호화됩니다.
+웹 대시보드의 **설정 → 텔레그램 알림**에서 봇 토큰과 Chat ID를 입력해 저장합니다.
+설정값은 SQLite DB(`db/app.db`)에 저장되며, 봇 토큰은 암호화됩니다.
 
 ---
 

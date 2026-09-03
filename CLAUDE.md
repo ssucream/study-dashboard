@@ -1,6 +1,6 @@
-# study-helper: Learning X 백그라운드 학습 도구
+# study-dashboard: Learning X 백그라운드 학습 도구
 
-숭실대학교 Canvas Learning X(canvas.ssu.ac.kr)의 강의 영상을 Docker 컨테이너 기반 CUI 환경에서
+숭실대학교 Canvas Learning X(canvas.ssu.ac.kr)의 강의 영상을 Docker 컨테이너 기반 웹 대시보드에서
 백그라운드로 재생(출석 처리)하거나 다운로드/변환/요약할 수 있는 도구.
 
 ## 실행 방법
@@ -18,7 +18,7 @@ docker compose up -d
 docker compose up --build      # 이미지 재빌드 후 실행
 ```
 
-- 웹 대시보드(backend + frontend 2서비스) 구조이므로 TUI 시절의 `run --rm` 대신 `up` 사용
+- 웹 대시보드(backend + frontend 2서비스) 구조이므로 `run --rm`이 아니라 `up`으로 실행
 - 로컬 빌드 모드로 전환 시 `src/`, `backend/`, `frontend/index.html`·`js/`·`nginx.conf`를 볼륨 마운트하면
   코드 수정 후 재빌드 없이 반영됨 (uvicorn `--reload`)
 - 다운로드 파일은 `./downloads/`에 저장됨 (컨테이너 내 `/downloads`)
@@ -37,9 +37,9 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 ## 절대 건드리면 안 되는 것들
 
 - **Playwright headless Chromium 유지**: 시스템 Chrome 경로 하드코딩 금지. Docker에서는 Playwright 내장 Chromium만 사용.
-- **GUI 의존성 추가 금지**: flet, PyQt5 등 GUI 라이브러리 사용 금지. CUI 전용.
+- **데스크톱 GUI 의존성 추가 금지**: flet, PyQt5 등 데스크톱 GUI 라이브러리 사용 금지. 백엔드는 headless, UI는 웹 대시보드(nginx + 정적 프론트) 전용.
 - **비디오 셀렉터**: `video.vc-vplay-video1`로 영상 URL 추출. 변경 시 Learning X 쪽 변경 확인 필요.
-- **SQLite 설정 저장소만 사용**: `.env` 기반 설정은 제거됨. 신규 설정 항목은 DB와 웹/CLI 설정 화면에만 추가할 것.
+- **SQLite 설정 저장소만 사용**: `.env` 기반 설정은 제거됨. 신규 설정 항목은 DB와 웹 설정 화면(`backend/api/routes/settings.py` + `frontend/js/settings.js`)에만 추가할 것.
 
 ## 설계 의도
 
@@ -49,50 +49,75 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 - **다운로드 경로**: 컨테이너 내 `/downloads` — 기본 compose에서 호스트 `./downloads`를 마운트.
 - **출력 파일**: mp4(영상), mp3(음성, ffmpeg 변환), txt(STT 결과), `_summarized.txt`(요약).
 - **백그라운드 재생**: video DOM 폴링(Plan A) + 진도 API 직접 호출(Plan B). Plan A 실패 시 자동 전환.
-- **자동 모드**: `ui/auto.py` — 미완료 강의 일괄 재생.
-- **마감 알림**: `notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
-- **버전 체크**: `updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
+- **자동 모드**: `backend/api/routes/auto.py` — 미완료 강의 일괄 재생 + 스케줄 실행.
+- **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
+- **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
+- **백그라운드 Task**: `backend/api/task_manager.py` — 다운로드/재생/자동모드 Task 생명주기 관리 및 SQLite 영속화.
 
 ## 프로젝트 구조
 
 ```
-study-helper/
-├── Dockerfile
-├── docker-compose.yml
-├── src/
-│   ├── main.py                           # 진입점, 로그인→설정→과목 선택 루프
-│   ├── config.py                         # 설정 로드/저장 (DB 기반으로 전환 중)
+study-dashboard/
+├── docker-compose.yml                    # backend + frontend 2서비스
+├── backend/                              # FastAPI REST/WebSocket API
+│   ├── Dockerfile
+│   ├── main.py                           # 앱 진입점 — 라우터 등록, lifespan(DB init·Config.load·Task 복원)
+│   └── api/
+│       ├── auth_dep.py                   # 로그인 세션 의존성
+│       ├── state.py                      # 로그인 세션(scraper) 프로세스 싱글턴
+│       ├── task_manager.py               # 다운로드/재생/자동모드 Task 생명주기 + SQLite 영속화
+│       ├── summary_store.py              # 요약 마크다운 파일 저장/조회
+│       ├── validators.py
+│       └── routes/
+│           ├── auth.py                   # 로그인/로그아웃
+│           ├── courses.py                # 과목/주차/강의 목록
+│           ├── player.py                 # 단일 강의 재생 + 후처리 파이프라인
+│           ├── auto.py                   # 자동 모드 (일괄 재생 + 스케줄)
+│           ├── settings.py               # 설정 조회/저장
+│           ├── summaries.py              # 요약 열람
+│           ├── tasks.py                  # Task 목록/취소/재시도, 다운로드·STT·요약
+│           ├── logs.py                   # 행위 로그 조회
+│           ├── deadline.py               # 마감 임박 조회/알림
+│           └── ws.py                     # WebSocket (진행 상황 push)
+├── src/                                  # 도메인 로직 (backend가 import)
+│   ├── config.py                         # 설정 로드/저장 (SQLite 기반)
 │   ├── crypto.py                         # 계정/API 키 암호화·복호화
-│   ├── logger.py                         # 로깅 설정
+│   ├── db.py                             # SQLite 초기화/마이그레이션
+│   ├── event_log.py                      # 행위 로그 기록
+│   ├── logger.py                         # 로깅 설정 / 스크래퍼 에러 로거
 │   ├── updater.py                        # GitHub 최신 버전 확인
-│   ├── auth/
-│   │   └── login.py                      # Playwright 로그인 처리
+│   ├── auth/login.py                     # Playwright 로그인 처리 (SSO 사이트 선택 포함)
 │   ├── scraper/
 │   │   ├── course_scraper.py             # 과목/주차/강의 목록 스크래핑
 │   │   └── models.py                     # Course, LectureItem, Week 등 데이터 모델
-│   ├── player/
-│   │   └── background_player.py          # 백그라운드 재생 (출석용)
+│   ├── player/background_player.py       # 백그라운드 재생 (출석용, Plan A/B)
 │   ├── downloader/
+│   │   ├── pipeline.py                   # 다운로드→변환→STT→요약 파이프라인
 │   │   └── video_downloader.py           # 영상 URL 추출 + HTTP 스트리밍 다운로드
-│   ├── converter/
-│   │   └── audio_converter.py            # mp4 → mp3 (ffmpeg)
-│   ├── stt/
-│   │   └── transcriber.py               # faster-whisper STT
-│   ├── summarizer/
-│   │   └── summarizer.py                # Gemini/OpenAI API 요약
-│   ├── notifier/
-│   │   ├── deadline_checker.py           # 마감 임박 항목 감지
-│   │   └── telegram_notifier.py          # 텔레그램 알림 전송
-│   └── ui/
-│       ├── auto.py                       # 자동 모드 (미완료 강의 일괄 재생)
-│       ├── login.py                      # 로그인 화면
-│       ├── courses.py                    # 과목/강의 선택 화면
-│       ├── player.py                     # 재생 진행 화면
-│       ├── download.py                   # 다운로드 진행 화면
-│       └── settings.py                   # 초기 설정 화면
-├── db/
-│   └── app.db                           # 설정 DB (호스트 ./db → 컨테이너 /db 볼륨 마운트)
-└── downloads/                            # 다운로드 파일 (호스트 ./downloads → 컨테이너 /downloads 볼륨 마운트)
+│   ├── converter/audio_converter.py      # mp4 → mp3 (ffmpeg)
+│   ├── stt/transcriber.py                # faster-whisper STT
+│   ├── summarizer/summarizer.py          # Gemini/OpenAI/OpenRouter 요약
+│   └── notifier/
+│       ├── deadline_checker.py           # 마감 임박 항목 감지
+│       └── telegram_notifier.py          # 텔레그램 알림 전송
+├── frontend/                             # nginx 정적 서빙 + /api 프록시 (HTTPS)
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── index.html
+│   └── js/                               # 바닐라 ES 모듈
+│       ├── app.js                        # 진입점, 라우팅, 대시보드
+│       ├── api.js                        # fetch 래퍼
+│       ├── state.js                      # 클라이언트 상태
+│       ├── settings.js                   # 설정 화면
+│       ├── modals.js                     # STT/요약 모달
+│       ├── summaries.js                  # 요약 열람
+│       ├── logs.js                       # 로그 뷰
+│       ├── markdown.js                   # 마크다운 렌더러
+│       └── utils.js
+├── db/app.db                             # 설정 DB (호스트 ./db → 컨테이너 /db 볼륨 마운트)
+├── downloads/                            # 다운로드/변환/요약 산출물 (호스트 ./downloads → 컨테이너 /downloads)
+├── certs/                                # 로컬 HTTPS 인증서
+└── docs/                                 # 기술 문서 (lms-analysis, https-local, telegram-setup)
 ```
 
 ## 설정 DB 스키마 (SQLite)
