@@ -52,6 +52,7 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 - **자동 모드**: `backend/api/routes/auto.py` — 미완료 강의 일괄 재생 + 스케줄 실행.
 - **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
 - **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
+- **예상 문제**: `src/quiz/` — 요약본·STT·업로드 강의자료(PDF/PPTX/DOCX)로 예상 문제 생성·채점. AI 호출은 `summarizer.generate_text()` 재사용. 객관식은 로컬 채점, 주관식은 채점기준+답안을 LLM 1회 호출. 문제셋/문항/풀이 이력은 SQLite(`quiz_sets`/`quiz_questions`/`quiz_attempts`).
 - **백그라운드 Task**: `backend/api/task_manager.py` — 다운로드/재생/자동모드 Task 생명주기 관리 및 SQLite 영속화.
 
 ## 프로젝트 구조
@@ -75,6 +76,7 @@ study-dashboard/
 │           ├── auto.py                   # 자동 모드 (일괄 재생 + 스케줄)
 │           ├── settings.py               # 설정 조회/저장
 │           ├── summaries.py              # 요약 열람
+│           ├── quiz.py                   # 예상 문제 생성/풀이/채점 + 강의자료 업로드
 │           ├── tasks.py                  # Task 목록/취소/재시도, 다운로드·STT·요약
 │           ├── logs.py                   # 행위 로그 조회
 │           ├── deadline.py               # 마감 임박 조회/알림
@@ -96,7 +98,15 @@ study-dashboard/
 │   │   └── video_downloader.py           # 영상 URL 추출 + HTTP 스트리밍 다운로드
 │   ├── converter/audio_converter.py      # mp4 → mp3 (ffmpeg)
 │   ├── stt/transcriber.py                # faster-whisper STT
-│   ├── summarizer/summarizer.py          # Gemini/OpenAI/OpenRouter 요약
+│   ├── summarizer/summarizer.py          # Gemini/OpenAI/OpenRouter 요약 + generate_text() 공용 진입점
+│   ├── quiz/                             # 예상 문제 생성·채점
+│   │   ├── materials.py                  # PDF/PPTX/DOCX 텍스트 추출
+│   │   ├── material_store.py             # 업로드 강의자료 파일 저장/조회
+│   │   ├── source_collector.py           # 요약본+STT+자료 → 컨텍스트 병합
+│   │   ├── generator.py                  # 문제 생성 (JSON 스키마 강제)
+│   │   ├── grader.py                     # 객관식 로컬 채점 / 주관식 LLM 채점
+│   │   ├── store.py                      # 문제셋/문항/풀이 이력 SQLite CRUD
+│   │   └── models.py                     # QuizQuestion, QuizSet, GradeResult
 │   └── notifier/
 │       ├── deadline_checker.py           # 마감 임박 항목 감지
 │       └── telegram_notifier.py          # 텔레그램 알림 전송
@@ -111,11 +121,12 @@ study-dashboard/
 │       ├── settings.js                   # 설정 화면
 │       ├── modals.js                     # STT/요약 모달
 │       ├── summaries.js                  # 요약 열람
+│       ├── quiz.js                       # 예상 문제 생성/풀이/채점 화면
 │       ├── logs.js                       # 로그 뷰
 │       ├── markdown.js                   # 마크다운 렌더러
 │       └── utils.js
 ├── db/app.db                             # 설정 DB (호스트 ./db → 컨테이너 /db 볼륨 마운트)
-├── downloads/                            # 다운로드/변환/요약 산출물 (호스트 ./downloads → 컨테이너 /downloads)
+├── downloads/                            # 다운로드/변환/요약 산출물 + 예상 문제용 업로드 자료(materials/) (호스트 ./downloads → 컨테이너 /downloads)
 ├── certs/                                # 로컬 HTTPS 인증서
 └── docs/                                 # 기술 문서 (lms-analysis, https-local, telegram-setup)
 ```
@@ -131,6 +142,14 @@ CREATE TABLE settings (
     value      TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- event_logs:  행위 로그 (src/event_log.py)
+-- tasks:       완료/실패 백그라운드 Task 이력 (backend/api/task_manager.py)
+
+-- 예상 문제 (src/quiz/store.py, 스키마는 src/db.py._ensure_schema)
+-- quiz_sets:      문제셋 메타 (과목/주차범위/유형별 개수/생성일)
+-- quiz_questions: 문항 (유형/지문/보기/정답/채점기준/해설) — 생성 시점에 확정
+-- quiz_attempts:  풀이 이력 (답안/문항별 채점결과/총점)
 
 -- 향후 확장 예정
 -- download_history: 다운로드 이력

@@ -86,6 +86,50 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_kind_created_at ON tasks(kind, created_at DESC)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_sets (
+            id           TEXT PRIMARY KEY,
+            course_id    TEXT NOT NULL,
+            course_name  TEXT NOT NULL,
+            term         TEXT NOT NULL DEFAULT '',
+            weeks_json   TEXT NOT NULL DEFAULT '[]',
+            counts_json  TEXT NOT NULL DEFAULT '{}',
+            source_json  TEXT NOT NULL DEFAULT '{}',
+            agent        TEXT NOT NULL DEFAULT '',
+            model        TEXT NOT NULL DEFAULT '',
+            status       TEXT NOT NULL DEFAULT 'ready',
+            created_at   TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sets_created_at ON quiz_sets(created_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sets_course ON quiz_sets(course_id, created_at DESC)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_questions (
+            id           TEXT PRIMARY KEY,
+            set_id       TEXT NOT NULL,
+            ordinal      INTEGER NOT NULL,
+            qtype        TEXT NOT NULL,
+            question     TEXT NOT NULL,
+            choices_json TEXT NOT NULL DEFAULT '[]',
+            answer       TEXT NOT NULL DEFAULT '',
+            rubric       TEXT NOT NULL DEFAULT '',
+            explanation  TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_questions_set ON quiz_questions(set_id, ordinal)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
+            id            TEXT PRIMARY KEY,
+            set_id        TEXT NOT NULL,
+            answers_json  TEXT NOT NULL DEFAULT '[]',
+            results_json  TEXT NOT NULL DEFAULT '[]',
+            score_total   REAL,
+            graded_status TEXT NOT NULL DEFAULT 'partial',
+            created_at    TEXT NOT NULL,
+            graded_at     TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_set ON quiz_attempts(set_id, created_at DESC)")
 
 
 def init() -> None:

@@ -211,19 +211,26 @@ def summarize(
         chapel_section=chapel_section,
     )
 
-    if agent == "gemini":
-        summary = _summarize_gemini(api_key, model, prompt)
-    elif agent == "openai":
-        summary = _summarize_openai(api_key, model, prompt)
-    elif agent == "openrouter":
-        summary = _summarize_openrouter(api_key, model, prompt)
-    else:
-        raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
+    summary = generate_text(agent, api_key, model, prompt)
 
     out_path = output_path if output_path else txt_path.with_stem(txt_path.stem + "_summarized")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(summary, encoding="utf-8")
     return out_path
+
+
+def generate_text(agent: str, api_key: str, model: str, prompt: str) -> str:
+    """provider(agent)에 맞는 텍스트 생성 API를 호출해 응답 문자열을 반환한다.
+
+    요약(summarize) 외에 예상 문제 생성·채점(src/quiz)에서도 이 진입점을 재사용한다.
+    """
+    if agent == "gemini":
+        return _summarize_gemini(api_key, model, prompt)
+    if agent == "openai":
+        return _summarize_openai(api_key, model, prompt)
+    if agent == "openrouter":
+        return _summarize_openrouter(api_key, model, prompt)
+    raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
 
 
 def build_summary_prompt(

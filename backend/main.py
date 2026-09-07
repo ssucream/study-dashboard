@@ -3,7 +3,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from backend.api.routes import auth, auto, courses, deadline, logs, player, settings, summaries, tasks
+from backend.api.routes import auth, auto, courses, deadline, logs, player, quiz, settings, summaries, tasks
 from backend.api.routes import ws as ws_route
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -77,6 +77,7 @@ app.include_router(player.router, prefix="/api/player", tags=["player"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(auto.router, prefix="/api/auto", tags=["auto"])
 app.include_router(summaries.router, prefix="/api/summaries", tags=["summaries"])
+app.include_router(quiz.router, prefix="/api/quiz", tags=["quiz"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 app.include_router(deadline.router, prefix="/api/deadline", tags=["deadline"])

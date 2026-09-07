@@ -40,6 +40,7 @@
 | 마크다운 대시보드 | 학기 → 과목 → 주차 계층으로 요약 열람 |
 | 자동 모드 | 스케줄에 따라 미시청 강의를 자동으로 재생·변환·요약 |
 | 실시간 상태 표시 | 현재 재생 중인 강의 및 다음 스케줄을 대시보드에 표시 |
+| 예상 문제 | 요약본·STT·업로드 강의자료(PDF/PPTX/DOCX)로 시험 예상 문제 생성·풀이·채점 (AI 필요) |
 
 ---
 
@@ -88,7 +89,7 @@ study-dashboard/
 ├── backend/                 # FastAPI REST/WebSocket API 서비스
 │   ├── main.py              # 앱 진입점 (라우터 등록, lifespan)
 │   └── api/
-│       ├── routes/          # auth·courses·player·auto·settings·summaries·tasks·logs·deadline·ws
+│       ├── routes/          # auth·courses·player·auto·settings·summaries·quiz·tasks·logs·deadline·ws
 │       ├── task_manager.py  # 백그라운드 Task 생명주기 + SQLite 영속화
 │       ├── summary_store.py # 요약 마크다운 파일 저장/조회
 │       └── state.py         # 로그인 세션(scraper) 싱글턴
@@ -105,10 +106,11 @@ study-dashboard/
 │   ├── converter/           # mp4 → mp3 (ffmpeg)
 │   ├── stt/                 # faster-whisper STT
 │   ├── summarizer/          # AI 요약 (Gemini / OpenAI / OpenRouter)
+│   ├── quiz/                # 예상 문제 생성·채점 (자료 추출·컨텍스트 병합·생성·채점·저장)
 │   └── notifier/            # 텔레그램 알림 + 마감 체커
 ├── frontend/                # nginx 정적 서빙 + /api 프록시 (HTTPS)
 │   ├── index.html
-│   └── js/                  # 바닐라 ES 모듈 (app, api, state, settings, modals, summaries, logs, markdown, utils)
+│   └── js/                  # 바닐라 ES 모듈 (app, api, state, settings, modals, summaries, quiz, logs, markdown, utils)
 ├── db/                      # 설정 DB(app.db) — 볼륨 마운트
 ├── downloads/               # mp4·mp3·txt·요약 산출물 — 볼륨 마운트
 ├── certs/                   # 로컬 HTTPS 인증서

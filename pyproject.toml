@@ -20,6 +20,12 @@ dependencies = [
     # 웹 API 서버
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
+    # 멀티파트 업로드 (예상 문제 기능 — 강의자료 업로드)
+    "python-multipart>=0.0.9",
+    # 강의자료 텍스트 추출 (예상 문제 기능)
+    "pypdf>=5.0.0",
+    "python-pptx>=1.0.0",
+    "python-docx>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -60,6 +66,10 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 관용구 — 파라미터 기본값으로 호출하는 의존성/폼/파일 마커.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Query", "fastapi.Depends"]
 
 [tool.ruff.format]
 quote-style = "double"

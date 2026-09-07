@@ -109,6 +109,10 @@
           <i class="nav-icon fa-solid fa-file-lines w-4 text-slate-500 text-center"></i>
           학습 결과
         </button>
+        <button class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-slate-300 text-sm font-medium w-full text-left" data-page="quiz">
+          <i class="nav-icon fa-solid fa-clipboard-question w-4 text-slate-500 text-center"></i>
+          예상 문제
+        </button>
         <button class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-slate-300 text-sm font-medium w-full text-left" data-page="settings">
           <i class="nav-icon fa-solid fa-gear w-4 text-slate-500 text-center"></i>
           설정
@@ -473,6 +477,123 @@
         </div>
 
         <div id="summaries-list" class="flex flex-col gap-4"></div>
+      </div>
+
+      <!-- ── 예상 문제 ── -->
+      <div id="page-quiz" class="page hidden p-8 max-w-4xl mx-auto fade-in">
+        <div class="flex items-center justify-between mb-8">
+          <div>
+            <p class="text-indigo-400 font-bold text-xs uppercase tracking-widest mb-1">Exam Prep</p>
+            <h1 class="text-2xl font-bold text-white">예상 문제</h1>
+          </div>
+          <button id="btn-quiz-new" class="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-400 rounded-xl text-sm text-white font-medium transition-all">
+            <i class="fa-solid fa-plus"></i>
+            새 문제셋
+          </button>
+        </div>
+
+        <p id="quiz-ai-warning" class="hidden mb-4 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-sm">
+          <i class="fa-solid fa-triangle-exclamation mr-2"></i>예상 문제 생성·채점은 AI 기능이 켜져 있어야 사용할 수 있습니다.
+          <button id="quiz-ai-warning-btn" class="underline hover:text-white ml-1">설정 이동</button>
+        </p>
+
+        <!-- 생성 폼 -->
+        <form id="quiz-form" class="hidden bg-[#1E293B] rounded-2xl border border-slate-700 p-6 mb-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-1.5">과목</label>
+            <select id="quiz-course" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-indigo-500/70"></select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-1.5">시험 범위 주차</label>
+            <div id="quiz-weeks" class="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+              <p class="text-xs text-slate-500">과목을 선택하면 주차가 표시됩니다.</p>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-sm font-medium text-slate-300">강의 자료 업로드 <span class="text-slate-500 font-normal">(PDF / PPTX / DOCX)</span></label>
+              <label class="text-xs text-slate-400 flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="quiz-include-stt" checked class="accent-indigo-500">STT 전사본도 활용
+              </label>
+            </div>
+            <input type="file" id="quiz-material-input" accept=".pdf,.pptx,.docx" multiple
+              class="block w-full text-sm text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700">
+            <div id="quiz-material-list" class="mt-2 flex flex-col gap-1.5"></div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">문제 유형 및 개수 <span class="text-slate-500 font-normal">(유형별 최대 20)</span></label>
+            <div class="grid grid-cols-3 gap-3">
+              <label class="flex flex-col gap-1 text-xs text-slate-400">객관식(5지선다)
+                <input type="number" id="quiz-count-mc" min="0" max="20" value="5" class="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500/70">
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-slate-400">단답형
+                <input type="number" id="quiz-count-short" min="0" max="20" value="3" class="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500/70">
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-slate-400">서술형
+                <input type="number" id="quiz-count-essay" min="0" max="20" value="2" class="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500/70">
+              </label>
+            </div>
+          </div>
+
+          <p id="quiz-form-error" class="hidden text-sm text-red-400"></p>
+          <div class="flex items-center gap-3">
+            <button type="submit" id="quiz-form-submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-400 rounded-xl text-sm text-white font-medium transition-all disabled:opacity-50">
+              문제 생성
+            </button>
+            <button type="button" id="quiz-form-cancel" class="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">취소</button>
+            <span id="quiz-form-status" class="text-sm text-slate-400"></span>
+          </div>
+        </form>
+
+        <div id="quiz-loading" class="hidden flex-col items-center justify-center py-20 text-center">
+          <i class="fa-solid fa-spinner fa-spin text-indigo-400 text-3xl mb-4"></i>
+          <p class="text-slate-400">문제셋 목록을 불러오는 중...</p>
+        </div>
+        <div id="quiz-empty" class="hidden flex-col items-center justify-center py-20 text-center">
+          <div class="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
+            <i class="fa-solid fa-clipboard-question text-slate-500 text-xl"></i>
+          </div>
+          <p class="font-semibold text-slate-300">생성된 문제셋이 없습니다.</p>
+          <p class="text-sm text-slate-500 mt-1">'새 문제셋'으로 시험 범위와 자료를 골라 예상 문제를 만들어 보세요.</p>
+        </div>
+        <div id="quiz-list" class="flex flex-col gap-3"></div>
+      </div>
+
+      <!-- ── 예상 문제 풀이 ── -->
+      <div id="page-quiz-solve" class="page hidden p-8 max-w-3xl mx-auto fade-in">
+        <button id="btn-quiz-solve-back" class="inline-flex items-center gap-2 px-3 py-2 -ml-1 mb-6 text-sm text-slate-400 hover:text-white transition-colors">
+          <i class="fa-solid fa-arrow-left"></i>예상 문제 목록
+        </button>
+        <div class="mb-6">
+          <p class="text-indigo-400 font-bold text-xs uppercase tracking-widest mb-1">Solve</p>
+          <h1 id="quiz-solve-title" class="text-2xl font-bold text-white"></h1>
+          <p id="quiz-solve-meta" class="text-sm text-slate-400 mt-1"></p>
+        </div>
+        <form id="quiz-solve-form" class="space-y-4"></form>
+        <p id="quiz-solve-error" class="hidden mt-3 text-sm text-red-400"></p>
+        <div class="mt-6 flex items-center gap-3">
+          <button id="btn-quiz-submit" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-400 rounded-xl text-sm text-white font-medium transition-all disabled:opacity-50">
+            제출하고 채점
+          </button>
+          <span id="quiz-solve-status" class="text-sm text-slate-400"></span>
+        </div>
+      </div>
+
+      <!-- ── 예상 문제 채점 결과 ── -->
+      <div id="page-quiz-result" class="page hidden p-8 max-w-3xl mx-auto fade-in">
+        <button id="btn-quiz-result-back" class="inline-flex items-center gap-2 px-3 py-2 -ml-1 mb-6 text-sm text-slate-400 hover:text-white transition-colors">
+          <i class="fa-solid fa-arrow-left"></i>예상 문제 목록
+        </button>
+        <div class="mb-6">
+          <p class="text-indigo-400 font-bold text-xs uppercase tracking-widest mb-1">Result</p>
+          <h1 id="quiz-result-title" class="text-2xl font-bold text-white"></h1>
+          <p id="quiz-result-meta" class="text-sm text-slate-400 mt-1"></p>
+        </div>
+        <div id="quiz-result-score" class="mb-6"></div>
+        <div id="quiz-result-list" class="space-y-4"></div>
       </div>
 
       <!-- ── 설정 ── -->

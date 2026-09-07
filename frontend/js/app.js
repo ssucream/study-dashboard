@@ -4,6 +4,7 @@ import { $, $$, esc, fmtTime } from './utils.js';
 import { applySettingsVisibility, loadAppSettings, loadSettings } from './settings.js';
 import { openSttText, openSummary } from './modals.js';
 import { loadSummaries } from './summaries.js';
+import { loadQuizSets } from './quiz.js';
 import { loadLogs, updateLogMenuState } from './logs.js';
 
 const _filter = { query: '', completion: 'all' };
@@ -30,6 +31,7 @@ function navigate(page) {
   if (page === 'settings') loadSettings();
   if (page === 'logs') loadLogs();
   if (page === 'summaries') loadSummaries();
+  if (page === 'quiz') loadQuizSets();
 }
 
 // ═══════════════════════════════════════════════════════════════
