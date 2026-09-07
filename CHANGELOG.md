@@ -2,6 +2,28 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.10.0] - 2026-09-07
+
+### Added
+
+- **예상 문제 생성·채점 기능**: 시험 범위 주차의 AI 요약본·STT 전사본과 업로드한 강의자료
+  (PDF/PPTX/DOCX)를 근거로 예상 문제를 생성하고 풀이·채점한다. AI 기능(`AI_ENABLED`)이
+  켜져 있어야 사용 가능하며 별도 설정 항목은 없다 (기존 `AI_AGENT`/키/모델 재사용).
+  - `src/quiz/` — 도메인 로직: `materials.py`(문서 텍스트 추출), `material_store.py`(업로드
+    파일 저장 `downloads/materials/{course}/{week}/`), `source_collector.py`(주차별 요약+STT+
+    자료를 컨텍스트로 병합, 12만자 상한·주차별 균등 트렁케이션), `generator.py`(JSON 스키마
+    강제 + 파싱 실패 시 1회 재시도, 큰 컨텍스트는 유형별 분할 호출), `grader.py`(객관식 로컬
+    채점, 주관식은 채점기준+답안을 LLM 1회 호출로 채점), `store.py`(SQLite CRUD)
+  - `backend/api/routes/quiz.py` — `/api/quiz` (문제셋 생성/목록/조회/삭제), `/api/quiz/materials`
+    (업로드/목록/삭제), `/api/quiz/{id}/attempts` (풀이 제출·채점 결과). 생성·주관식 채점은
+    `task_manager` 백그라운드 Task(`quiz_generate`/`quiz_grade`)
+  - `src/db.py` — `quiz_sets` / `quiz_questions` / `quiz_attempts` 테이블 추가
+  - `frontend/` — 사이드바 "예상 문제" 메뉴, 생성 폼(과목·주차 다중선택·자료 업로드·유형별 개수),
+    풀이 화면, 채점 결과 화면 (`frontend/js/quiz.js`)
+  - `src/summarizer/summarizer.py` — provider 분기를 `generate_text()`로 공개해 요약·문제
+    생성·채점이 공유
+  - 의존성 추가: `python-multipart`, `pypdf`, `python-pptx`, `python-docx`
+
 ## [v26.9.2] - 2026-09-03
 
 ### Removed
