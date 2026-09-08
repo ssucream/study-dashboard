@@ -7,6 +7,7 @@ from backend.api.routes import auto as auto_route
 from backend.api.state import PlaybackProgress, app_state, scraper_lock
 from backend.api.task_manager import task_manager
 
+from src import event_log
 from src.scraper.models import Course, CourseDetail, LectureItem, LectureType, Week
 
 
@@ -117,7 +118,7 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
 
     from src.player.background_player import PlaybackState
 
-    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
         return PlaybackState(current=10, duration=10, ended=True)
 
     monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
@@ -289,6 +290,117 @@ async def test_auto_cycle_does_not_complete_lecture_when_attendance_not_recorded
     assert app_state.auto.processed_count == 0  # 처리 건수 증가 안 함
     assert pipeline_calls == []  # 다운로드/요약 파이프라인 실행 안 함
     assert app_state.playback.status == "error"
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_skips_pipeline_when_verification_fails(monkeypatch):
+    """verified=False(재스크래핑 출석 미반영 확정)면 후처리 파이프라인을 돌리지 않는다."""
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        return PlaybackState(
+            current=1000,
+            duration=1000,
+            ended=True,
+            verified=False,
+            lms_completion="incomplete",
+            lms_attendance="absent",
+            error="재생은 끝났지만 LMS에 출석이 반영되지 않았습니다 (completion=incomplete, attendance=absent).",
+        )
+
+    pipeline_calls = []
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: pipeline_calls.append(1) or _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: "log/path")
+
+    await auto_route._run_auto_cycle()
+
+    assert pipeline_calls == []
+    assert lecture.completion == "incomplete"
+    assert app_state.auto.processed_count == 0
+    events = event_log.list_events(event_type="player", limit=5)
+    assert events[0]["action"] == "attendance_not_recorded"
+    assert events[0]["metadata"]["verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_runs_pipeline_when_verification_unavailable(monkeypatch):
+    """verified=None(검증 불가)이면 요약 누락을 막기 위해 파이프라인을 실행한다."""
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        return PlaybackState(current=10, duration=10, ended=True, verified=None)
+
+    pipeline_calls = []
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: pipeline_calls.append(1) or _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    assert pipeline_calls == [1]
+    assert app_state.auto.processed_count == 1
+    events = event_log.list_events(event_type="player", limit=5)
+    assert events[0]["action"] == "play_complete"
+    assert events[0]["metadata"]["verified"] is None
 
 
 @pytest.mark.asyncio

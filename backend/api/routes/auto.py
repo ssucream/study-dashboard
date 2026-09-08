@@ -38,6 +38,77 @@ def _next_schedule_time(schedule_hours: list[int]) -> datetime:
     return tomorrow.replace(hour=sorted(schedule_hours)[0], minute=0, second=0, microsecond=0)
 
 
+def _make_verify_fn(course, lec):
+    """재생 후 LMS 목록 재스크래핑으로 (completion, attendance)를 읽는 콜백을 만든다.
+
+    background_player가 CourseScraper를 직접 import하지 않도록 호출자가 주입한다.
+    """
+
+    async def _verify() -> tuple[str, str] | None:
+        scraper = app_state.scraper
+        if scraper is None:
+            return None
+        return await scraper.fetch_item_status(course, lec.full_url)
+
+    return _verify
+
+
+def _log_attendance_not_recorded(course, lec, state) -> None:
+    """출석 미반영(또는 재생 실패)을 로그·이벤트로 남긴다."""
+    from backend.api.routes.player import _verification_metadata
+
+    from src import event_log
+
+    ratio = state.lms_progress_ratio
+    logger.warning(
+        "출석 미반영: %s / %s — 검증=%s completion=%s attendance=%s LMS진도=%s",
+        course.long_name,
+        lec.title,
+        state.verified,
+        state.lms_completion,
+        state.lms_attendance,
+        f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
+    )
+    with suppress(Exception):
+        event_log.record_event(
+            event_type="player",
+            action="attendance_not_recorded",
+            status="failed",
+            actor_user_id=app_state.user_id or None,
+            target_type="lecture",
+            course_id=course.id,
+            course_name=course.long_name,
+            lecture_title=lec.title,
+            lecture_url=lec.full_url,
+            week_label=lec.week_label,
+            error_code="attendance_not_recorded",
+            error_message=state.error,
+            log_path=app_state.playback.log_path,
+            metadata=_verification_metadata(state),
+        )
+
+
+async def _notify_attendance_not_recorded(course, lec, state) -> None:
+    """출석 미반영 텔레그램 알림. 설정이 꺼져 있으면 아무것도 하지 않는다."""
+    from src.config import Config
+    from src.notifier import telegram_notifier
+
+    if not Config.should_notify("error"):
+        return
+    loop = asyncio.get_running_loop()
+    with suppress(Exception):
+        await loop.run_in_executor(
+            None,
+            telegram_notifier.notify_auto_error,
+            Config.TELEGRAM_BOT_TOKEN,
+            Config.TELEGRAM_CHAT_ID,
+            course.long_name,
+            lec.week_label,
+            lec.title,
+            state.error or "LMS에 출석이 반영되지 않았습니다.",
+        )
+
+
 async def _run_post_play_pipeline(course, lec, page) -> None:
     """재생 완료 후 다운로드 → STT → 요약 → 텔레그램 파이프라인을 실행한다.
 
@@ -155,7 +226,11 @@ async def _run_post_play_pipeline(course, lec, page) -> None:
 
 async def _run_auto_cycle() -> None:
     """미시청 강의를 한 사이클 순차 재생한다."""
-    from backend.api.routes.player import _mark_lecture_completed, _write_playback_log
+    from backend.api.routes.player import (
+        _mark_lecture_completed,
+        _verification_metadata,
+        _write_playback_log,
+    )
 
     from src.player.background_player import play_lecture
 
@@ -259,6 +334,7 @@ async def _run_auto_cycle() -> None:
                 on_progress=_on_progress,
                 debug=True,
                 log_fn=log_buffer.append,
+                verify_fn=_make_verify_fn(course, lec),
             )
             _on_progress(final_state)
 
@@ -268,54 +344,15 @@ async def _run_auto_cycle() -> None:
                 app_state.playback.status = "stopped"
                 app_state.auto.enabled = False
                 break
-            elif final_state.error:
+            elif final_state.error or final_state.verified is False:
+                # 재생 자체 실패이거나, 재생은 끝났지만 재스크래핑에서 출석 미반영이 확정된 경우.
+                # 완료 처리하지 않고 후처리 파이프라인도 돌리지 않는다 (토큰 낭비 차단).
                 app_state.playback.status = "error"
                 app_state.playback.log_path = _write_playback_log(
-                    lec.title, lec.full_url, final_state.error, log_buffer
+                    lec.title, lec.full_url, final_state.error or "출석 미반영", log_buffer
                 )
-                # 재생은 끝났지만 LMS에 출석이 반영되지 않은 경우 — 완료 처리하지 않고
-                # 다음 사이클에 재시도된다. 사용자가 알 수 있도록 로그·알림을 남긴다.
-                if final_state.lms_progress_ratio is not None:
-                    logger.warning(
-                        "출석 미반영: %s / %s — LMS 진도 %.0f%% (다음 사이클 재시도)",
-                        course.long_name,
-                        lec.title,
-                        final_state.lms_progress_ratio * 100,
-                    )
-                    from src import event_log
-
-                    with suppress(Exception):
-                        event_log.record_event(
-                            event_type="player",
-                            action="attendance_not_recorded",
-                            status="failed",
-                            actor_user_id=app_state.user_id or None,
-                            target_type="lecture",
-                            course_id=course.id,
-                            course_name=course.long_name,
-                            lecture_title=lec.title,
-                            week_label=lec.week_label,
-                            error_code="attendance_not_recorded",
-                            error_message=final_state.error,
-                            log_path=app_state.playback.log_path,
-                            metadata={"lms_progress_ratio": round(final_state.lms_progress_ratio, 3)},
-                        )
-                    from src.config import Config
-                    from src.notifier import telegram_notifier
-
-                    if Config.should_notify("error"):
-                        loop = asyncio.get_running_loop()
-                        with suppress(Exception):
-                            await loop.run_in_executor(
-                                None,
-                                telegram_notifier.notify_auto_error,
-                                Config.TELEGRAM_BOT_TOKEN,
-                                Config.TELEGRAM_CHAT_ID,
-                                course.long_name,
-                                lec.week_label,
-                                lec.title,
-                                final_state.error,
-                            )
+                _log_attendance_not_recorded(course, lec, final_state)
+                await _notify_attendance_not_recorded(course, lec, final_state)
             elif final_state.ended:
                 app_state.playback.status = "completed"
                 updated = _mark_lecture_completed(course.id, lec.full_url)
@@ -336,20 +373,21 @@ async def _run_auto_cycle() -> None:
                         course_id=course.id,
                         course_name=course.long_name,
                         lecture_title=lec.title,
+                        lecture_url=lec.full_url,
                         week_label=lec.week_label,
                         message="자동 재생 완료",
-                        metadata={
-                            "progress_reported": final_state.progress_reported,
-                            "lms_progress_ratio": round(ratio, 3) if ratio is not None else None,
-                        },
+                        metadata=_verification_metadata(final_state),
                     )
                 logger.info(
-                    "재생 완료: %s / %s (진도보고=%s, LMS진도=%s)",
+                    "재생 완료: %s / %s (검증=%s, 진도보고=%s, LMS진도=%s)",
                     course.long_name,
                     lec.title,
+                    final_state.verified,
                     final_state.progress_reported,
                     f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
                 )
+                # verified is None(검증 불가)에서도 파이프라인을 돌린다 — 검증 인프라 장애로
+                # 정상 재생의 요약이 영구 누락되는 것을 막기 위함. 무한 반복은 억제 원장이 막는다.
                 run_pipeline = True
             else:
                 app_state.playback.status = "stopped"

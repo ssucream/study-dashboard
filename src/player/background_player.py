@@ -17,7 +17,7 @@ import contextlib
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -35,6 +35,12 @@ _PLAY_BTN = ".vc-front-screen-play-btn"
 _VIDEO_SEL = "video.vc-vplay-video1"
 _ATTENDANCE_MIN_RATIO = 0.9  # LMS 저장 진도가 이 비율 이상이어야 출석 인정으로 간주
 
+# 재생 후 LMS 강의 목록 재스크래핑 검증 (C안 — 최종 진실 소스)
+_VERIFY_ATTEMPTS = 3
+_VERIFY_BACKOFF = (5, 15, 30)  # 각 시도 직전 대기(초). LMS 원장 반영 지연을 흡수한다.
+# 스크래핑 attendance 값 중 출석 인정으로 볼 값
+_VERIFY_OK_ATTENDANCE = frozenset({"attendance", "late", "excused"})
+
 
 @dataclass
 class PlaybackState:
@@ -47,6 +53,13 @@ class PlaybackState:
     progress_reported: bool = False
     # 재생 후 LMS에 실제로 저장된 진도 비율 (B안 검증 결과). None=확인 불가
     lms_progress_ratio: float | None = None
+    # 재스크래핑한 강의 목록 상태 (C안). completed/incomplete, attendance/late/absent/excused/none
+    lms_completion: str | None = None
+    lms_attendance: str | None = None
+    # True=출석 확인, False=미반영 확정, None=검증 불가 또는 검증 비활성
+    verified: bool | None = None
+    # 재스크래핑 검증을 실제로 몇 번 시도했는지 (측정용)
+    verify_attempts: int = 0
 
 
 # ── 내부 헬퍼 ────────────────────────────────────────────────────
@@ -426,13 +439,22 @@ def _extract_watched_seconds(data: dict) -> float | None:
     return None
 
 
-async def _confirm_lms_attendance(page: Page, api_url: str, state: PlaybackState, log: Callable) -> None:
+async def _confirm_lms_attendance(
+    page: Page,
+    api_url: str,
+    state: PlaybackState,
+    log: Callable,
+    set_error: bool = True,
+) -> None:
     """재생 완료 후 LMS가 실제로 저장한 진도를 재조회해 state에 반영한다 (B안).
 
     - LMS 저장 진도 / duration 비율을 state.lms_progress_ratio 에 기록
     - 비율이 임계값 이상이면 state.progress_reported=True (확정)
     - 명백히 미달이면 state.error 를 설정해 상위(auto/player)가 완료 처리하지 않도록 함
     - 조회 자체가 불가하면 아무것도 바꾸지 않고 A안(progress_reported)에 위임
+
+    set_error=False이면 실패 판정을 하지 않고 관측(진도 기록·로깅)만 한다.
+    재스크래핑 검증(_verify_via_rescrape)이 최종 판정을 맡을 때 사용한다.
     """
     if not api_url:
         log("  [검증] attendance API URL 미확보 — LMS 진도 재확인 생략 (A안 결과 사용)")
@@ -465,7 +487,7 @@ async def _confirm_lms_attendance(page: Page, api_url: str, state: PlaybackState
         if ratio >= _ATTENDANCE_MIN_RATIO:
             # LMS 원장이 완료를 확인 → 확정
             state.progress_reported = True
-        elif not state.progress_reported:
+        elif set_error and not state.progress_reported:
             # A안(진도 보고 수락)도 실패, B안(LMS 저장 진도)도 미달 → 출석 미반영으로 판정.
             # 두 신호가 모두 음성일 때만 실패 처리해 stale endat 등으로 인한 오탐을 막는다.
             state.error = (
@@ -478,6 +500,57 @@ async def _confirm_lms_attendance(page: Page, api_url: str, state: PlaybackState
         return
 
     log("  [검증] attendance API 3회 조회 실패 — A안 결과(progress_reported)에 위임")
+
+
+async def _verify_via_rescrape(
+    verify_fn: Callable[[], Awaitable[tuple[str, str] | None]],
+    state: PlaybackState,
+    log: Callable,
+) -> None:
+    """LMS 강의 목록을 재스크래핑해 출석 반영 여부를 확정한다 (C안 — 최종 판정).
+
+    verify_fn은 호출자가 주입한 `() -> (completion, attendance) | None` 코루틴이다.
+    background_player가 CourseScraper를 직접 import하지 않도록 콜백으로 받는다.
+
+    - completion == "completed" 또는 attendance가 출석 인정값 → verified=True
+    - 신호는 받았지만 끝까지 미충족 → verified=False + state.error 설정
+    - 신호를 한 번도 못 받음(예외/None 반복) → verified=None, state.error는 건드리지 않음
+      (검증 인프라 장애로 정상 재생을 실패 처리하지 않기 위함)
+    """
+    got_signal = False
+    for attempt in range(_VERIFY_ATTEMPTS):
+        delay = _VERIFY_BACKOFF[min(attempt, len(_VERIFY_BACKOFF) - 1)]
+        if delay:
+            await asyncio.sleep(delay)
+        state.verify_attempts = attempt + 1
+        try:
+            result = await verify_fn()
+        except Exception as e:
+            log(f"  [검증] 재스크래핑 실패 ({attempt + 1}/{_VERIFY_ATTEMPTS}): {e}")
+            continue
+        if result is None:
+            log(f"  [검증] 강의를 목록에서 찾지 못함 ({attempt + 1}/{_VERIFY_ATTEMPTS})")
+            continue
+
+        completion, attendance = result
+        got_signal = True
+        state.lms_completion = completion
+        state.lms_attendance = attendance
+        log(f"  [검증] 재스크래핑 결과: completion={completion} attendance={attendance}")
+        if completion == "completed" or attendance in _VERIFY_OK_ATTENDANCE:
+            state.verified = True
+            return
+
+    if not got_signal:
+        state.verified = None
+        log("  [검증] 재스크래핑 불가 — 검증 결과 없음 (재생 결과를 그대로 신뢰)")
+        return
+
+    state.verified = False
+    state.error = (
+        f"재생은 끝났지만 LMS에 출석이 반영되지 않았습니다 "
+        f"(completion={state.lms_completion}, attendance={state.lms_attendance})."
+    )
 
 
 async def _fetch_learningx_duration(page: Page, learningx_url: str, log: Callable) -> float:
@@ -969,6 +1042,7 @@ async def play_lecture(
     debug: bool = False,
     fallback_duration: float = 0.0,
     log_fn: Callable | None = None,
+    verify_fn: Callable[[], Awaitable[tuple[str, str] | None]] | None = None,
 ) -> PlaybackState:
     """
     강의 URL을 headless 브라우저로 재생한다.
@@ -979,6 +1053,9 @@ async def play_lecture(
         on_progress:  재생 진행 시 주기적으로 호출되는 콜백. PlaybackState 전달.
         debug:        True이면 단계별 진단 로그를 출력한다.
         log_fn:       debug 출력에 사용할 로그 함수. 미지정 시 print 사용.
+        verify_fn:    재생 후 LMS 강의 목록을 재스크래핑해 (completion, attendance)를
+                      반환하는 콜백. 호출자가 주입한다 (CourseScraper 직접 의존 회피).
+                      PLAYBACK_VERIFY_ENABLED=false면 무시된다.
 
     Returns:
         최종 PlaybackState.
@@ -1256,17 +1333,33 @@ async def play_lecture(
     # (사전녹화 H.264 강의는 Plan B 진도 API가 거부돼도 시뮬레이션은 끝까지 돌아
     #  ended=True가 되므로, LMS 원장을 신뢰 소스로 다시 확인해야 오탐을 막는다.)
     if result_state.ended and not result_state.cancelled and not result_state.error:
+        # C안(재스크래핑)이 켜져 있으면 그것이 최종 판정이고, B안은 관측용으로 강등된다.
+        verify_enabled = verify_fn is not None and _is_playback_verify_enabled()
         api_url = _sniffed_api_url[0] if _sniffed_api_url else ""
         with contextlib.suppress(Exception):
-            await _confirm_lms_attendance(page, api_url, result_state, log)
+            await _confirm_lms_attendance(page, api_url, result_state, log, set_error=not verify_enabled)
+        if verify_enabled:
+            await _verify_via_rescrape(verify_fn, result_state, log)
         if result_state.error:
             log(f"  [검증] 출석 미반영 판정 — {result_state.error}")
+        elif result_state.verified:
+            log("  [검증] 출석 반영 확인됨 (재스크래핑)")
         elif result_state.progress_reported:
             log("  [검증] 출석 반영 확인됨")
         else:
             log("  [검증] 출석 반영 여부 불명 — 진도 보고 성공 기록 없음")
 
     return result_state
+
+
+def _is_playback_verify_enabled() -> bool:
+    """PLAYBACK_VERIFY_ENABLED 설정을 읽는다. 설정 로드 실패 시 기본값(켜짐)."""
+    try:
+        from src.config import Config
+
+        return Config.PLAYBACK_VERIFY_ENABLED != "false"
+    except Exception:
+        return True
 
 
 async def _play_lecture_inner(

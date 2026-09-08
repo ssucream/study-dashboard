@@ -4,12 +4,20 @@ import json
 
 import pytest
 
+from src.player import background_player
 from src.player.background_player import (
     _ATTENDANCE_MIN_RATIO,
     PlaybackState,
     _confirm_lms_attendance,
     _extract_watched_seconds,
+    _verify_via_rescrape,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_verify_backoff(monkeypatch):
+    """재스크래핑 검증 backoff를 0으로 만들어 테스트를 즉시 끝낸다."""
+    monkeypatch.setattr(background_player, "_VERIFY_BACKOFF", (0, 0, 0))
 
 
 class _FakeResponse:
@@ -149,3 +157,92 @@ async def test_confirm_noop_when_progress_field_unparseable():
 
 def test_attendance_min_ratio_is_reasonable():
     assert 0.5 < _ATTENDANCE_MIN_RATIO <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_confirm_does_not_set_error_when_set_error_false():
+    """재스크래핑 검증이 최종 판정을 맡으면 _confirm_lms_attendance는 관측만 한다."""
+    state = PlaybackState(duration=1000, ended=True, progress_reported=False)
+    body = json.dumps({"viewer_url": "x?endat=120.00"})
+    page = _FakePage([_FakeResponse(200, body)])
+
+    await _confirm_lms_attendance(page, "https://.../attendance_items/1", state, _log, set_error=False)
+
+    assert state.lms_progress_ratio == pytest.approx(0.12)
+    assert state.error is None  # 판정은 _verify_via_rescrape가 한다
+
+
+# ── _verify_via_rescrape ─────────────────────────────────────────
+
+
+def _verify_returning(*results):
+    """호출할 때마다 results를 순서대로 반환/raise하는 verify_fn을 만든다."""
+    queue = list(results)
+
+    async def _fn():
+        item = queue.pop(0) if len(queue) > 1 else queue[0]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    return _fn
+
+
+@pytest.mark.asyncio
+async def test_verify_marks_verified_when_completion_completed():
+    state = PlaybackState(duration=1000, ended=True)
+
+    await _verify_via_rescrape(_verify_returning(("completed", "none")), state, _log)
+
+    assert state.verified is True
+    assert state.lms_completion == "completed"
+    assert state.error is None
+    assert state.verify_attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_marks_verified_when_attendance_recorded():
+    """completion이 incomplete여도 출석(attendance)이 잡히면 성공으로 본다."""
+    state = PlaybackState(duration=1000, ended=True)
+
+    await _verify_via_rescrape(_verify_returning(("incomplete", "attendance")), state, _log)
+
+    assert state.verified is True
+    assert state.lms_attendance == "attendance"
+    assert state.error is None
+
+
+@pytest.mark.asyncio
+async def test_verify_marks_unverified_after_three_negative_results():
+    state = PlaybackState(duration=1000, ended=True)
+
+    await _verify_via_rescrape(_verify_returning(("incomplete", "absent")), state, _log)
+
+    assert state.verified is False
+    assert state.error is not None
+    assert "출석" in state.error
+    assert state.verify_attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_verify_leaves_none_when_rescrape_always_fails():
+    """검증 인프라 장애(예외/미검출)는 실패 판정이 아니라 '검증 불가'다."""
+    state = PlaybackState(duration=1000, ended=True)
+
+    await _verify_via_rescrape(_verify_returning(RuntimeError("네트워크 오류")), state, _log)
+
+    assert state.verified is None
+    assert state.error is None  # 정상 재생을 실패로 만들지 않는다
+    assert state.lms_completion is None
+
+
+@pytest.mark.asyncio
+async def test_verify_retries_until_lms_ledger_reflects_attendance():
+    """LMS 원장 반영 지연 흡수 — 첫 두 번은 미반영, 세 번째에 반영."""
+    state = PlaybackState(duration=1000, ended=True)
+    fn = _verify_returning(("incomplete", "none"), ("incomplete", "none"), ("completed", "attendance"))
+
+    await _verify_via_rescrape(fn, state, _log)
+
+    assert state.verified is True
+    assert state.verify_attempts == 3

@@ -147,6 +147,9 @@ class Config:
     # 사용자가 '자동 모드 중지'나 로그아웃을 하면 false로 저장된다.
     AUTO_ENABLED: str = ""
     AUTO_SCHEDULE_HOURS: str = ""
+    # 재생 완료 후 LMS 강의 목록을 재스크래핑해 출석 반영을 재검증할지 (비상 스위치).
+    # false면 기존 ended 판정으로 동작한다.
+    PLAYBACK_VERIFY_ENABLED: str = "true"
 
     @classmethod
     def load(cls) -> None:
@@ -196,6 +199,7 @@ class Config:
         cls.TELEGRAM_DEADLINE_THRESHOLDS = db.get("TELEGRAM_DEADLINE_THRESHOLDS", _DEFAULT_DEADLINE_THRESHOLDS)
         cls.AUTO_ENABLED = db.get("AUTO_ENABLED", "false")
         cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
+        cls.PLAYBACK_VERIFY_ENABLED = db.get("PLAYBACK_VERIFY_ENABLED", "true")
 
     @classmethod
     def get_ai_api_key(cls, agent: str | None = None) -> str:

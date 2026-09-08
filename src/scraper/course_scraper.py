@@ -236,6 +236,35 @@ class CourseScraper:
         """과목의 주차별 강의 목록 스크래핑 (메인 페이지 사용)"""
         return await self._fetch_lectures_on(self._page, course)
 
+    async def fetch_item_status(
+        self,
+        course: Course,
+        item_url: str,
+        page: Page | None = None,
+    ) -> tuple[str, str] | None:
+        """단일 강의의 (completion, attendance)를 LMS 목록 재스크래핑으로 조회한다.
+
+        재생 성공 판정의 단일 진실 소스. 파싱은 `_fetch_lectures_on`을 그대로 재사용해
+        LMS DOM이 바뀌어도 수정 지점이 한 곳으로 유지된다.
+
+        page가 None이면 내부에서 새 page를 만들고 끝나면 닫는다.
+        목록에서 해당 강의를 찾지 못하면 None.
+        """
+        owned = page is None
+        if owned:
+            page = await self.new_page()
+        try:
+            detail = await self._fetch_lectures_on(page, course)
+        finally:
+            if owned:
+                await self.close_page(page)
+
+        for week in detail.weeks:
+            for lec in week.lectures:
+                if lec.full_url == item_url or lec.item_url == item_url:
+                    return lec.completion, lec.attendance
+        return None
+
     async def fetch_all_details(
         self,
         courses: list[Course],

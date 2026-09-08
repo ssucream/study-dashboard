@@ -48,6 +48,19 @@ def _mark_lecture_completed(course_id: str, lecture_url: str) -> bool:
     return False
 
 
+def _verification_metadata(state) -> dict:
+    """이벤트 로그 metadata에 담을 출석 검증 신호 묶음 (auto.py와 공유)."""
+    ratio = state.lms_progress_ratio
+    return {
+        "verified": state.verified,
+        "lms_completion": state.lms_completion,
+        "lms_attendance": state.lms_attendance,
+        "progress_reported": state.progress_reported,
+        "lms_progress_ratio": round(ratio, 3) if ratio is not None else None,
+        "verify_attempts": state.verify_attempts,
+    }
+
+
 def _write_playback_log(title: str, lecture_url: str, error: str, log_buffer: list[str]) -> str | None:
     """웹 재생 실패 로그를 파일로 남기고 경로를 반환한다."""
     try:
@@ -175,6 +188,12 @@ async def start_play(req: PlayRequest):
         if not state.error:
             app_state.playback.status = "playing"
 
+    async def verify_fn() -> tuple[str, str] | None:
+        """재생 후 LMS 목록을 재스크래핑해 출석 반영 여부를 확인한다."""
+        if app_state.scraper is None:
+            return None
+        return await app_state.scraper.fetch_item_status(course, req.lecture_url)
+
     async def run(managed: ManagedTask):
         managed.update(stage="playing", message=req.lecture_title)
         # 수동 재생도 전용 page를 쓴다. 메인 page에 init script를 누적시키면
@@ -188,6 +207,7 @@ async def start_play(req: PlayRequest):
                 on_progress=on_progress,
                 debug=True,
                 log_fn=log_buffer.append,
+                verify_fn=verify_fn,
             )
             _sync_progress(final_state)
 
@@ -232,7 +252,7 @@ async def start_play(req: PlayRequest):
                     error_code="playback_error",
                     error_message=final_state.error,
                     log_path=app_state.playback.log_path,
-                    metadata={"task_id": managed.id},
+                    metadata={"task_id": managed.id, **_verification_metadata(final_state)},
                 )
                 await _notify_playback_error(course.long_name, req.week_label, req.lecture_title)
             elif final_state.ended:
@@ -253,7 +273,11 @@ async def start_play(req: PlayRequest):
                     lecture_url=req.lecture_url,
                     week_label=req.week_label,
                     message="재생이 완료되었습니다.",
-                    metadata={"task_id": managed.id, "cache_updated": updated},
+                    metadata={
+                        "task_id": managed.id,
+                        "cache_updated": updated,
+                        **_verification_metadata(final_state),
+                    },
                 )
                 await _notify_playback_complete(course.long_name, req.week_label, req.lecture_title)
                 from src.config import Config

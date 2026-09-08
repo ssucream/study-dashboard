@@ -88,7 +88,7 @@ def reset_state(monkeypatch, tmp_path):
 async def test_start_play_marks_completed_lecture(monkeypatch):
     course, lecture = _seed_course()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         state = PlaybackState(current=10, duration=10, ended=True)
         if log_fn:
             log_fn("fake playback log")
@@ -149,7 +149,7 @@ async def test_play_complete_sends_telegram_notification(monkeypatch):
     """1-A: 재생 완료 시 텔레그램 완료 알림 전송."""
     course, lecture = _seed_course()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         state = PlaybackState(current=10, duration=10, ended=True)
         if on_progress:
             on_progress(state)
@@ -189,7 +189,7 @@ async def test_play_error_sends_failed_true_notification(monkeypatch):
     """1-B: 재생 오류 시 failed=True 알림 전송."""
     course, lecture = _seed_course()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         return PlaybackState(current=2, duration=10, ended=False, error="비디오 오류")
 
     notified = {}
@@ -223,7 +223,7 @@ async def test_play_incomplete_sends_failed_false_notification(monkeypatch):
     """1-B: 재생 미완료(오류 없음) 시 failed=False 알림 전송."""
     course, lecture = _seed_course()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         return PlaybackState(current=5, duration=10, ended=False, error=None)
 
     notified = {}
@@ -255,7 +255,7 @@ async def test_play_incomplete_sends_failed_false_notification(monkeypatch):
 async def test_start_play_preserves_playback_error(monkeypatch):
     course, lecture = _seed_course()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         state = PlaybackState(current=2, duration=10, ended=False, error="비디오 프레임을 찾지 못했습니다.")
         if on_progress:
             on_progress(state)
@@ -291,7 +291,7 @@ async def test_stop_play_does_not_reset_is_playing_before_cleanup_finishes(monke
     cleanup_done = False
     started = asyncio.Event()
 
-    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
         nonlocal cleanup_done
         try:
             started.set()

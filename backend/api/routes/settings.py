@@ -32,6 +32,7 @@ async def get_ai_models():
 async def get_settings():
     require_auth()
     return {
+        "PLAYBACK_VERIFY_ENABLED": Config.PLAYBACK_VERIFY_ENABLED,
         "DOWNLOAD_ENABLED": Config.DOWNLOAD_ENABLED,
         "DOWNLOAD_DIR": Config.get_download_dir(),
         "DOWNLOAD_RULE": Config.get_download_rule(),
@@ -66,6 +67,7 @@ async def get_settings():
 
 
 class SettingsUpdate(BaseModel):
+    PLAYBACK_VERIFY_ENABLED: str | None = None
     DOWNLOAD_ENABLED: str | None = None
     DOWNLOAD_RULE: str | None = None
     AUTO_DOWNLOAD_AFTER_PLAY: str | None = None
