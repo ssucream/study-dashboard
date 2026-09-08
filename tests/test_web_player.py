@@ -12,8 +12,25 @@ from src.player.background_player import PlaybackState
 from src.scraper.models import Course, CourseDetail, LectureItem, LectureType, Week
 
 
+class _FakePage:
+    def __init__(self, index: int):
+        self.index = index
+        self.closed = False
+
+
 class _FakeScraper:
     _page = object()
+
+    def __init__(self):
+        self.opened: list[_FakePage] = []
+
+    async def new_page(self) -> _FakePage:
+        page = _FakePage(len(self.opened))
+        self.opened.append(page)
+        return page
+
+    async def close_page(self, page) -> None:
+        page.closed = True
 
 
 def _reset_app_state() -> None:
@@ -99,6 +116,32 @@ async def test_start_play_marks_completed_lecture(monkeypatch):
     assert [event["action"] for event in events] == ["play_complete", "play_start"]
     assert events[0]["status"] == "success"
     assert event_log.is_timestamp_format(events[0]["created_at"])
+
+
+@pytest.mark.asyncio
+async def test_start_play_uses_isolated_page(monkeypatch):
+    """수동 재생도 전용 page를 열고 끝나면 닫는다 (메인 page 오염 방지)."""
+    course, lecture = _seed_course()
+    used = {}
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
+        used["page"] = page
+        return PlaybackState(current=10, duration=10, ended=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    await app_state.play_task
+
+    assert used["page"] is not app_state.scraper._page
+    assert used["page"].closed is True
 
 
 @pytest.mark.asyncio

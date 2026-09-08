@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from pathlib import Path
 
 from backend.api.auth_dep import require_auth
@@ -116,14 +117,20 @@ def _schedule_auto_download(req: PlayRequest, course, play_task_id: str) -> None
         def on_stage(stage: str, message: str, progress_pct: float | None = None) -> None:
             managed.update(stage=stage, message=message, progress_pct=progress_pct)
 
-        return await run_download_from_config(
-            page=app_state.scraper._page,
-            lecture_url=req.lecture_url,
-            lecture_title=req.lecture_title,
-            week_label=req.week_label,
-            course_name=course.long_name,
-            on_stage=on_stage,
-        )
+        # 재생에 쓴 page의 잔여 SPA 상태를 물려받지 않도록 전용 page를 쓴다.
+        page = await app_state.scraper.new_page()
+        try:
+            return await run_download_from_config(
+                page=page,
+                lecture_url=req.lecture_url,
+                lecture_title=req.lecture_title,
+                week_label=req.week_label,
+                course_name=course.long_name,
+                on_stage=on_stage,
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await app_state.scraper.close_page(page)
 
     managed = task_manager.create(
         "download",
@@ -170,9 +177,13 @@ async def start_play(req: PlayRequest):
 
     async def run(managed: ManagedTask):
         managed.update(stage="playing", message=req.lecture_title)
+        # 수동 재생도 전용 page를 쓴다. 메인 page에 init script를 누적시키면
+        # 이후 자동모드·스크래핑에도 오염이 남는다.
+        play_page = None
         try:
+            play_page = await app_state.scraper.new_page()
             final_state = await play_lecture(
-                app_state.scraper._page,
+                play_page,
                 req.lecture_url,
                 on_progress=on_progress,
                 debug=True,
@@ -314,6 +325,9 @@ async def start_play(req: PlayRequest):
             await _notify_playback_error(course.long_name, req.week_label, req.lecture_title)
         finally:
             app_state.is_playing = False
+            if play_page is not None:
+                with contextlib.suppress(Exception):
+                    await app_state.scraper.close_page(play_page)
 
     managed = task_manager.create(
         "player",
