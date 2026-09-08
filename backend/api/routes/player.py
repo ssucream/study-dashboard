@@ -57,6 +57,7 @@ def _verification_metadata(state) -> dict:
         "lms_attendance": state.lms_attendance,
         "progress_reported": state.progress_reported,
         "lms_progress_ratio": round(ratio, 3) if ratio is not None else None,
+        "watched_source": state.watched_source,
         "verify_attempts": state.verify_attempts,
     }
 

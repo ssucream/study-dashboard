@@ -53,22 +53,29 @@ def _log(*_a, **_k):
 # ── _extract_watched_seconds ─────────────────────────────────────
 
 
-def test_extract_watched_seconds_from_viewer_url_endat():
+def test_extract_watched_seconds_falls_back_to_viewer_url_endat():
     data = {"viewer_url": "https://commons.ssu.ac.kr/em/x?startat=0.00&endat=1780.50&TargetUrl=y"}
-    assert _extract_watched_seconds(data) == pytest.approx(1780.5)
+    assert _extract_watched_seconds(data) == (pytest.approx(1780.5), "endat")
 
 
 def test_extract_watched_seconds_from_explicit_field():
     data = {"item_content_data": {"duration": 1800}, "attendance": {"cumulative_second": 1700}}
-    assert _extract_watched_seconds(data) == 1700.0
+    assert _extract_watched_seconds(data) == (1700.0, "field")
 
 
-def test_extract_watched_seconds_prefers_viewer_url_over_ambiguous():
+def test_extract_watched_seconds_prefers_explicit_field_over_endat():
+    """endat은 우리가 써넣은 자체 보고값일 수 있으므로 명시적 누적 필드가 우선한다."""
     data = {
         "viewer_url": "x?endat=1500.00",
+        "attendance": {"cumulative_second": 900},
         "current_time": 10,  # 모호한 필드 — 무시돼야 함
     }
-    assert _extract_watched_seconds(data) == 1500.0
+    assert _extract_watched_seconds(data) == (900.0, "field")
+
+
+def test_extract_watched_seconds_ignores_ambiguous_fields():
+    data = {"viewer_url": "x?endat=1500.00", "current_time": 10}
+    assert _extract_watched_seconds(data) == (1500.0, "endat")
 
 
 def test_extract_watched_seconds_returns_none_when_unknown_shape():
@@ -119,6 +126,29 @@ async def test_confirm_keeps_completed_when_report_ok_but_lms_progress_lagging()
     assert state.lms_progress_ratio == pytest.approx(0.12)
     assert state.progress_reported is True
     assert state.error is None
+
+
+@pytest.mark.asyncio
+async def test_confirm_records_watched_source_for_endat_fallback():
+    """endat 폴백을 썼다면 출처를 state에 남겨 이벤트 metadata로 측정할 수 있게 한다."""
+    state = PlaybackState(duration=1000, ended=True, progress_reported=True)
+    page = _FakePage([_FakeResponse(200, json.dumps({"viewer_url": "x?endat=990.00"}))])
+
+    await _confirm_lms_attendance(page, "https://.../attendance_items/1", state, _log)
+
+    assert state.watched_source == "endat"
+
+
+@pytest.mark.asyncio
+async def test_confirm_records_watched_source_for_explicit_field():
+    state = PlaybackState(duration=1000, ended=True)
+    body = json.dumps({"attendance": {"cumulative_second": 950}, "viewer_url": "x?endat=990.00"})
+    page = _FakePage([_FakeResponse(200, body)])
+
+    await _confirm_lms_attendance(page, "https://.../attendance_items/1", state, _log)
+
+    assert state.watched_source == "field"
+    assert state.lms_progress_ratio == pytest.approx(0.95)
 
 
 @pytest.mark.asyncio
