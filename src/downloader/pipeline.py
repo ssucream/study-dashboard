@@ -215,23 +215,41 @@ async def download_lecture_media(
                     output_path=txt_path,
                 ),
             )
-            files.append({"type": "txt", "path": str(txt_path)})
             audio_deleted = False
             if delete_audio_after_stt:
                 mp3_path.unlink(missing_ok=True)
                 audio_deleted = True
                 if mp3_file is not None:
                     mp3_file["deleted"] = "true"
-            stt_result = {
-                "enabled": True,
-                "status": "completed",
-                "txt_path": str(txt_path),
-                "audio_path": str(mp3_path),
-                "audio_deleted": audio_deleted,
-                "model": stt_model or "base",
-                "language": stt_language or "",
-            }
-            if ai_enabled and ai_api_key and ai_model:
+
+            # 음성이 없는 영상(샘플/플레이스홀더 등)은 Whisper가 세그먼트를 0개 반환해
+            # 빈 txt가 만들어진다. 이 경우 요약은 무의미하므로 하드 에러 대신 건너뛴다.
+            transcript_empty = (not txt_path.is_file()) or not txt_path.read_text(encoding="utf-8").strip()
+            if transcript_empty:
+                txt_path.unlink(missing_ok=True)
+                stt_result = {
+                    "enabled": True,
+                    "status": "empty",
+                    "message": "음성에서 인식된 텍스트가 없어 STT/요약을 건너뛰었습니다.",
+                    "audio_path": str(mp3_path),
+                    "audio_deleted": audio_deleted,
+                    "model": stt_model or "base",
+                    "language": stt_language or "",
+                }
+                stage("stt_empty", "음성이 감지되지 않아 STT/요약을 건너뜁니다.", 99)
+
+            if not transcript_empty:
+                files.append({"type": "txt", "path": str(txt_path)})
+                stt_result = {
+                    "enabled": True,
+                    "status": "completed",
+                    "txt_path": str(txt_path),
+                    "audio_path": str(mp3_path),
+                    "audio_deleted": audio_deleted,
+                    "model": stt_model or "base",
+                    "language": stt_language or "",
+                }
+            if not transcript_empty and ai_enabled and ai_api_key and ai_model:
                 stage("summarizing", "AI 요약 중입니다.", 98)
                 from src.summarizer.summarizer import summarize
 

@@ -205,6 +205,64 @@ async def test_download_pipeline_preserves_files_when_stt_fails(monkeypatch, tmp
     assert all(f["type"] != "txt" for f in partial["files"])
 
 
+@pytest.mark.asyncio
+async def test_download_pipeline_skips_summary_on_empty_transcript(monkeypatch, tmp_path):
+    """음성이 없는 영상 — STT가 빈 txt를 내면 요약을 건너뛰고 오류 없이 완료돼야 한다."""
+
+    async def fake_extract_video_url(page, lecture_url):
+        return "https://cdn.example/video.mp4"
+
+    async def fake_download_video_with_browser(page, video_url, save_path, on_progress=None):
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"mp4")
+
+    def fake_convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None):
+        mp3_path = mp3_path if mp3_path else mp4_path.with_suffix(".mp3")
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
+        mp3_path.write_bytes(b"mp3")
+        return mp3_path
+
+    def fake_transcribe(audio_path, model_size="base", language="", on_model_loaded=None, output_path=None):
+        txt_path = output_path if output_path else audio_path.with_suffix(".txt")
+        txt_path.parent.mkdir(parents=True, exist_ok=True)
+        txt_path.write_text("   \n", encoding="utf-8")  # 세그먼트 0개 → 공백만
+        return txt_path
+
+    def fake_summarize(*args, **kwargs):
+        raise AssertionError("빈 전사본에는 요약을 호출하면 안 된다")
+
+    monkeypatch.setattr(pipeline, "extract_video_url", fake_extract_video_url)
+    monkeypatch.setattr(pipeline, "download_video_with_browser", fake_download_video_with_browser)
+    monkeypatch.setattr(pipeline, "convert_to_mp3", fake_convert_to_mp3)
+    monkeypatch.setattr("src.stt.transcriber.transcribe", fake_transcribe)
+    monkeypatch.setattr("src.summarizer.summarizer.summarize", fake_summarize)
+
+    result = await pipeline.download_lecture_media(
+        page=object(),
+        lecture_url="https://canvas.ssu.ac.kr/courses/1/items/1",
+        lecture_title="샘플영상",
+        week_label="2주차",
+        course_name="테스트",
+        download_dir=str(tmp_path),
+        rule="both",
+        stt_enabled=True,
+        ai_enabled=True,
+        ai_agent="gemini",
+        ai_api_key="key",
+        ai_model="gemini-2.5-flash",
+    )
+
+    assert result["stt"]["status"] == "empty"
+    assert result["summary"] == {"enabled": False}
+    assert all(file["type"] != "txt" for file in result["files"])
+    assert all(file["type"] != "summary" for file in result["files"])
+    # 빈 txt 파일은 남기지 않는다.
+    _base, _mp4, _mp3, txt_path, _summary = pipeline.build_download_paths(
+        download_dir=str(tmp_path), course_name="테스트", week_label="2주차", lecture_title="샘플영상"
+    )
+    assert not txt_path.exists()
+
+
 def test_download_info_for_lecture_treats_path_traversal_as_not_exists(monkeypatch, tmp_path):
     """build_download_paths()의 경로 이탈 감지(ValueError)만 exists:False로 흡수해야 한다."""
 

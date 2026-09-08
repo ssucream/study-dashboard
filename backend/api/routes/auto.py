@@ -84,6 +84,10 @@ async def _run_post_play_pipeline(course, lec) -> None:
             on_stage=_on_stage,
         )
 
+        # 음성이 없는 영상(샘플/플레이스홀더)은 STT가 빈 결과를 내므로 요약을 건너뛴다 — 오류가 아니다.
+        if (result.get("stt") or {}).get("status") == "empty":
+            logger.info("STT 결과 없음 — 요약 건너뜀: %s / %s (음성 미검출)", course.long_name, lec.title)
+
         # 요약 완료 시 텔레그램으로 요약 전송
         summary_result = result.get("summary") or {}
         if Config.should_notify("summary") and summary_result.get("status") == "completed":

@@ -106,6 +106,21 @@ async def start_download(req: DownloadTaskRequest):
                 on_stage=on_stage,
             )
             stt_result = result.get("stt") or {}
+            if stt_result.get("status") == "empty":
+                event_log.record_event(
+                    event_type="stt",
+                    action="transcribe_empty",
+                    status="success",
+                    actor_user_id=app_state.user_id or None,
+                    target_type="lecture",
+                    course_id=req.course_id,
+                    course_name=course.long_name,
+                    lecture_title=req.lecture_title,
+                    lecture_url=req.lecture_url,
+                    week_label=req.week_label,
+                    message="음성에서 인식된 텍스트가 없어 STT/요약을 건너뛰었습니다.",
+                    metadata={"task_id": managed.id, "stt": stt_result},
+                )
             if stt_result.get("status") == "completed":
                 event_log.record_event(
                     event_type="stt",
@@ -532,6 +547,8 @@ async def start_summarize_from_file(req: SummarizeFromFileRequest):
 
         if not current_txt.is_file():
             raise RuntimeError("STT 텍스트 파일을 찾을 수 없습니다.")
+        if not current_txt.read_text(encoding="utf-8").strip():
+            raise RuntimeError("음성에서 인식된 텍스트가 없어 요약할 내용이 없습니다.")
 
         managed.update(stage="summarizing", message="AI 요약 중입니다.", progress_pct=80)
         loop = asyncio.get_running_loop()
