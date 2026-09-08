@@ -145,6 +145,54 @@ async def test_start_play_uses_isolated_page(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_manual_play_treats_unverified_attendance_as_warning(monkeypatch):
+    """수동 재생은 출석 미반영이어도 완료 처리·자동 다운로드를 진행하고 경고만 남긴다."""
+    course, lecture = _seed_course()
+
+    async def fake_play_lecture(page, lecture_url, on_progress=None, debug=False, log_fn=None, **kw):
+        return PlaybackState(
+            current=1000,
+            duration=1000,
+            ended=True,
+            verified=False,
+            lms_completion="incomplete",
+            lms_attendance="absent",
+            error="재생은 끝났지만 LMS에 출석이 반영되지 않았습니다 (completion=incomplete, attendance=absent).",
+        )
+
+    scheduled = []
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play_lecture)
+    monkeypatch.setattr(player_route, "_schedule_auto_download", lambda *a: scheduled.append(1))
+    monkeypatch.setattr("src.config.Config.DOWNLOAD_ENABLED", "true")
+    monkeypatch.setattr("src.config.Config.AUTO_DOWNLOAD_AFTER_PLAY", "true")
+
+    await player_route.start_play(
+        player_route.PlayRequest(
+            course_id=course.id,
+            lecture_url=lecture.full_url,
+            lecture_title=lecture.title,
+            week_label=lecture.week_label,
+        )
+    )
+    await app_state.play_task
+
+    assert app_state.playback.status == "completed"
+    assert app_state.playback.error is None
+    assert app_state.playback.warning is not None
+    assert "출석" in app_state.playback.warning
+    assert lecture.completion == "completed"  # 완료 처리는 진행
+    assert scheduled == [1]  # 후처리(자동 다운로드)도 진행
+
+    actions = [e["action"] for e in event_log.list_events(event_type="player", limit=10)]
+    assert "play_complete" in actions
+    assert "attendance_not_recorded" in actions  # 경고 이벤트도 남는다
+    assert "play_failed" not in actions
+
+    status = await player_route.get_status()
+    assert status["warning"] == app_state.playback.warning
+
+
+@pytest.mark.asyncio
 async def test_play_complete_sends_telegram_notification(monkeypatch):
     """1-A: 재생 완료 시 텔레그램 완료 알림 전송."""
     course, lecture = _seed_course()

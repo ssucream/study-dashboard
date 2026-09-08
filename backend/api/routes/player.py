@@ -212,6 +212,15 @@ async def start_play(req: PlayRequest):
             )
             _sync_progress(final_state)
 
+            # 수동 재생은 사용자가 의도적으로 1회 실행하는 경로다. 재스크래핑에서 출석
+            # 미반영이 확정돼도 완료 처리와 후처리(자동 다운로드)는 그대로 진행하고 경고만
+            # 남긴다. 파이프라인을 막는 토큰 낭비 차단 논리는 매 사이클 반복하는 자동 모드
+            # 전용이며, 수동 경로는 억제 원장에도 기록하지 않는다 (계획 2-4).
+            if final_state.ended and final_state.verified is False:
+                app_state.playback.warning = final_state.error
+                final_state.error = None
+                app_state.playback.error = None
+
             if final_state.cancelled:
                 app_state.playback.status = "stopped"
                 app_state.playback.error = None
@@ -280,6 +289,23 @@ async def start_play(req: PlayRequest):
                         **_verification_metadata(final_state),
                     },
                 )
+                if app_state.playback.warning:
+                    event_log.record_event(
+                        event_type="player",
+                        action="attendance_not_recorded",
+                        status="warning",
+                        actor_user_id=app_state.user_id or None,
+                        target_type="lecture",
+                        course_id=req.course_id,
+                        course_name=course.long_name,
+                        lecture_title=req.lecture_title,
+                        lecture_url=req.lecture_url,
+                        week_label=req.week_label,
+                        error_code="attendance_not_recorded",
+                        error_message=app_state.playback.warning,
+                        message="재생은 완료됐지만 LMS 출석이 확인되지 않았습니다.",
+                        metadata={"task_id": managed.id, **_verification_metadata(final_state)},
+                    )
                 await _notify_playback_complete(course.long_name, req.week_label, req.lecture_title)
                 from src.config import Config
 
@@ -433,6 +459,7 @@ async def get_status():
         "status": pb.status,
         "log_path": pb.log_path,
         "refresh_recommended": pb.refresh_recommended,
+        "warning": pb.warning,
         "task_id": app_state.play_task_id,
         "auto_download_task_id": app_state.auto_download_task_id,
     }

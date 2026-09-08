@@ -11,6 +11,8 @@ class PlaybackProgress:
     status: str = "idle"
     log_path: str | None = None
     refresh_recommended: bool = False  # 완료 갱신 실패 시 새로고침 안내 (1.3)
+    # 완료 처리는 했지만 사용자가 알아야 할 경고 (예: 수동 재생 후 LMS 출석 미반영)
+    warning: str | None = None
 
     @property
     def progress_pct(self) -> float:

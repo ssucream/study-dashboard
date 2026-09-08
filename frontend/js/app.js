@@ -211,6 +211,13 @@ function _applyPlayerStatus(s) {
       message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
       messageTitle.textContent = '재생 완료';
       messageBody.textContent = `${s.lecture_title} 강의 재생이 완료되었습니다.`;
+      if (s.warning) {
+        // 완료 처리는 했지만 LMS 출석이 확인되지 않음 — 사용자가 직접 확인해야 한다.
+        message.className = 'mt-5 px-4 py-3 rounded-xl border text-sm bg-amber-500/10 border-amber-500/30 text-amber-300';
+        messageTitle.textContent = '재생 완료 (출석 미확인)';
+        messageLog.textContent = s.warning;
+        messageLog.classList.remove('hidden');
+      }
       if (s.refresh_recommended) {
         messageLog.textContent = '강의 목록이 자동으로 업데이트되지 않았습니다. 강의 목록 탭의 새로고침 버튼을 눌러주세요.';
         messageLog.classList.remove('hidden');
