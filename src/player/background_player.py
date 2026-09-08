@@ -1828,9 +1828,46 @@ async def _play_lecture_inner(
                 log(f"    → commons meta duration 조회 실패 (Plan B): {e}")
         return await _play_via_progress_api(page, player_url_snapshot, on_progress, log, fallback_duration)
 
-    # Plan A 완료 후 progress API에 100% 직접 보고
-    # 플레이어 JS가 가짜 WebM 재생 중 progress API를 호출하지 않는 경우 대비
-    # Plan A는 [6.6]에서 GetTotalPage()로 읽은 실제 값을 쓴다 (하드코딩 15 제거).
+    # Plan A 완료 후: 루프에서 검증된 진도 경로(_lms_url, state=8, page ctx fetch)로 100%를
+    # 한 번 더 보고한다.
+    #
+    # 루프는 fake WebM의 v.duration 부정확성 때문에 실제 duration의 ~85%(마지막 30초 스텝)에서
+    # "완료 기준 도달"로 종료될 수 있다. 그 경우 아래 _report_completion(별도 TargetUrl, state=3)은
+    # LMS가 "시청 중"으로 보고 ErrAlreadyInView로 거부해 완료가 누락된다. 반면 루프의 progress
+    # 호출은 동일 URL·state로 result:true를 받으므로, 같은 경로에 cumulativeTime=실제 duration을
+    # 보내 90% 완료 임계값을 확실히 넘긴다.
+    _final_dur = state.duration
+    if _sniffed_duration and _sniffed_duration[0] > _final_dur:
+        _final_dur = _sniffed_duration[0]
+    if _using_fake_video and _lms_url and _final_dur > 0:
+        ts = int(asyncio.get_event_loop().time() * 1000)
+        sep = "&" if "?" in _lms_url else "?"
+        final_url = (
+            f"{_lms_url}{sep}callback=_cb_{ts}&state=8"
+            f"&duration={_final_dur:.2f}"
+            f"&currentTime={_final_dur:.2f}&cumulativeTime={_final_dur:.2f}"
+            f"&page={_total_page}&totalpage={_total_page}"
+            f"&cumulativePage={_total_page}&_={ts}"
+        )
+        try:
+            result = await page.evaluate(f"""
+                async () => {{
+                    try {{
+                        const resp = await fetch({json.dumps(final_url)});
+                        return {{s: resp.status, b: (await resp.text()).slice(0, 200)}};
+                    }} catch(e) {{
+                        return {{s: -1, b: e.message}};
+                    }}
+                }}
+            """)
+            log(f"[7] 100% 진도 최종 보고 (page ctx, state=8): {result.get('s')} {result.get('b', '')!r}")
+            if result.get("s") == 200 and '"result":true' in (result.get("b") or ""):
+                state.progress_reported = True
+        except Exception as e:
+            log(f"[7] 100% 진도 최종 보고 실패: {e}")
+
+    # 추가 안전망: 별도 TargetUrl 경로로도 100% 보고 (Plan A는 [6.6]에서 읽은 total_page 사용).
+    # ErrAlreadyInView로 거부되는 경우가 있으나 위 경로가 이미 성공했으면 무해하다.
     if await _report_completion(
         page, player_url_snapshot, state.duration, log, use_page_eval=True, total_page=_total_page
     ):

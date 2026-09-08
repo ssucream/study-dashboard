@@ -2,6 +2,19 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.10.5] - 2026-09-08
+
+### Fixed
+
+- **긴 영상(약 3분 이상)이 출석 처리 안 되던 문제**: Plan A 재생 루프가 fake WebM의 부정확한
+  `video.duration` 때문에 실제 길이의 약 85%(마지막 30초 스텝) 지점에서 종료되고, 그 뒤 폴백인
+  `_report_completion`은 별도 TargetUrl·`state=3`으로 호출돼 LMS가 `ErrAlreadyInView`로 거부했다.
+  결과적으로 LMS 완료 임계값(90%)을 못 넘겨 진도가 반영되지 않았다. 짧은 영상은 우연히 마지막
+  스텝이 90%를 넘겨 정상 처리되던 것. 루프 종료 후, 루프에서 이미 `result:true`를 받은 진도
+  경로(`lms_url`, `state=8`, page 컨텍스트 fetch)로 `cumulativeTime=실제 duration`(100%)을 한 번
+  더 전송하도록 수정 (`src/player/background_player.py`). 실제 duration은 `attendance_items`
+  스니핑 값을 우선 사용
+
 ## [v26.10.4] - 2026-09-08
 
 ### Fixed
