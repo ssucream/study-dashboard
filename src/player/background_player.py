@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from playwright.async_api import Frame, Page
 
+from src.scraper.models import ATTENDED_STATUSES
+
 # ── 상수 ─────────────────────────────────────────────────────────
 _POLL_INTERVAL = 1.0  # 진행 폴링 주기 (초)
 _FRAME_FIND_TIMEOUT = 30  # iframe 탐색 최대 대기 (초)
@@ -42,8 +44,8 @@ _VERIFY_ATTEMPTS = 3
 # 첫 시도는 즉시, 이후 재시도 직전 대기(초). LMS 원장 반영 지연을 흡수한다.
 # _VERIFY_ATTEMPTS=3이면 0 → 5s → 15s (총 20초). 마지막 값은 시도 수를 늘릴 때의 여유분.
 _VERIFY_BACKOFF = (5, 15, 30)
-# 스크래핑 attendance 값 중 출석 인정으로 볼 값
-_VERIFY_OK_ATTENDANCE = frozenset({"attendance", "late", "excused"})
+# 스크래핑 attendance 값 중 출석 인정으로 볼 값 (자동모드 needs_watch 판정과 공유)
+_VERIFY_OK_ATTENDANCE = ATTENDED_STATUSES
 
 
 @dataclass

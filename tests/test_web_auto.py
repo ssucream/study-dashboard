@@ -516,6 +516,63 @@ async def test_auto_cycle_skips_suppressed_lectures(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_auto_cycle_skips_attendance_recognized_lectures(monkeypatch):
+    """출석은 인정됐으나 module_item-completed가 안 된 강의는 다음 사이클 pending에서 제외된다."""
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    attended_lec = LectureItem(
+        title="출석만된강의",
+        item_url="/courses/1/items/attended",
+        lecture_type=LectureType.MOVIE,
+        week_label="1주차",
+        completion="incomplete",
+        attendance="attendance",
+    )
+    normal_lec = _make_lecture("정상강의")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[attended_lec, normal_lec])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    played = []
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        played.append(url)
+        return PlaybackState(current=10, duration=10, ended=True, verified=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    assert played == [normal_lec.full_url]
+
+
+@pytest.mark.asyncio
 async def test_auto_cycle_records_ledger_on_verification_failure(monkeypatch):
     """verified=False면 원장에 실패 시도로 기록되고, 한도 도달 시 억제된다."""
     from src import playback_ledger

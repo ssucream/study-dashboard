@@ -25,6 +25,24 @@ def test_lecture_item_needs_watch():
     )
     assert lec_upcoming.needs_watch is False
 
+    # 출석이 인정된 상태(attendance/late/excused)면 module_item-completed가 아직 incomplete여도
+    # 자동모드 재생 대상에서 제외한다 — 출석은 이미 반영됐으므로 재생은 순수 낭비.
+    for status in ("attendance", "late", "excused"):
+        lec_attended = LectureItem(
+            title="t", item_url="/a", lecture_type=LectureType.MOVIE, completion="incomplete", attendance=status
+        )
+        assert lec_attended.needs_watch is False, f"attendance={status} 이면 needs_watch=False"
+
+    lec_absent = LectureItem(
+        title="t", item_url="/a", lecture_type=LectureType.MOVIE, completion="incomplete", attendance="absent"
+    )
+    assert lec_absent.needs_watch is True
+
+    lec_no_attendance = LectureItem(
+        title="t", item_url="/a", lecture_type=LectureType.MOVIE, completion="incomplete", attendance="none"
+    )
+    assert lec_no_attendance.needs_watch is True
+
 
 def test_lecture_item_needs_submission():
     """미완료 과제/퀴즈만 제출 필요로 집계한다."""

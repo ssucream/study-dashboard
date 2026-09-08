@@ -32,6 +32,10 @@ SUBMISSION_REQUIRED_TYPES = {
     LectureType.QUIZ,
 }
 
+# 스크래핑 attendance 값 중 출석 인정으로 볼 값 (CLAUDE.md "출석 상태" 표: attendance/late/excused, absent 제외).
+# 재생 후 재검증 성공 판정(src/player/background_player.py)과 자동모드 재생 대상 판정(needs_watch)이 공유한다.
+ATTENDED_STATUSES = frozenset({"attendance", "late", "excused"})
+
 
 @dataclass
 class Course:
@@ -77,7 +81,12 @@ class LectureItem:
 
     @property
     def needs_watch(self) -> bool:
-        return self.is_video and self.completion != "completed" and not self.is_upcoming
+        return (
+            self.is_video
+            and not self.is_upcoming
+            and self.completion != "completed"
+            and self.attendance not in ATTENDED_STATUSES
+        )
 
     @property
     def needs_submission(self) -> bool:
