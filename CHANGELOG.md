@@ -2,6 +2,19 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.10.4] - 2026-09-08
+
+### Fixed
+
+- **출석 상태 파싱이 항상 "출석"으로 오판**: `attendance_status` 요소의 class를 부분 문자열로
+  검사했는데, 기저 클래스명 `xnmb-module_item-meta_data-attendance_status` 자체에 `"attendance"`가
+  포함돼 실제 상태가 `none`(미출석)이어도 `"attendance"`로 읽혔다. 전 과목 96개 강의에서
+  `absent`/`late`/`excused`가 한 번도 관측되지 않던 원인. 이 오판 탓에 v26.10.2 재검증이
+  false positive를 내고(안 된 재생을 완료 처리), v26.10.3이 미출석 영상을 `needs_watch=False`로
+  자동모드에서 제외하는 회귀가 있었다. 공백 분리 토큰 정확 매칭으로 수정하고(`completion`도 동일),
+  순수 헬퍼 `_parse_attendance_class`/`_parse_completion_class`로 분리해 테스트를 추가했다
+  (`src/scraper/course_scraper.py`)
+
 ## [v26.10.3] - 2026-09-08
 
 ### Fixed
