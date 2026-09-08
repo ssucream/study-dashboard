@@ -38,10 +38,13 @@ def _next_schedule_time(schedule_hours: list[int]) -> datetime:
     return tomorrow.replace(hour=sorted(schedule_hours)[0], minute=0, second=0, microsecond=0)
 
 
-async def _run_post_play_pipeline(course, lec) -> None:
+async def _run_post_play_pipeline(course, lec, page) -> None:
     """재생 완료 후 다운로드 → STT → 요약 → 텔레그램 파이프라인을 실행한다.
 
     Config 설정에 따라 각 단계를 선택적으로 실행한다.
+
+    page: 영상 URL 추출에 사용할 전용 Playwright page. 재생에 쓴 page를 재사용하면
+          오염된 SPA 상태에서 URL을 추출하게 되므로 호출자가 새 page를 넘긴다.
     """
     from pathlib import Path
 
@@ -76,7 +79,7 @@ async def _run_post_play_pipeline(course, lec) -> None:
     try:
         app_state.auto.pipeline_stage = "다운로드 준비 중..."
         result = await run_download_from_config(
-            page=app_state.scraper._page,
+            page=page,
             lecture_url=lec.full_url,
             lecture_title=lec.title,
             week_label=lec.week_label,
@@ -244,9 +247,14 @@ async def _run_auto_cycle() -> None:
             app_state.playback.ended = s.ended
             app_state.playback.error = s.error
 
+        # 강의마다 새 page를 쓴다 — 같은 탭을 재사용하면 init script/SPA 상태가 누적돼
+        # 사이클당 첫 강의만 LMS 출석이 반영되던 문제가 재발한다.
+        run_pipeline = False
+        play_page = None
         try:
+            play_page = await app_state.scraper.new_page()
             final_state = await play_lecture(
-                app_state.scraper._page,
+                play_page,
                 lec.full_url,
                 on_progress=_on_progress,
                 debug=True,
@@ -342,7 +350,7 @@ async def _run_auto_cycle() -> None:
                     final_state.progress_reported,
                     f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
                 )
-                await _run_post_play_pipeline(course, lec)
+                run_pipeline = True
             else:
                 app_state.playback.status = "stopped"
 
@@ -356,8 +364,24 @@ async def _run_auto_cycle() -> None:
             app_state.playback.log_path = _write_playback_log(lec.title, lec.full_url, str(e), log_buffer)
         finally:
             app_state.is_playing = False
-            with suppress(Exception):
-                await app_state.scraper._page.goto("about:blank", wait_until="domcontentloaded", timeout=5000)
+            if play_page is not None:
+                with suppress(Exception):
+                    await app_state.scraper.close_page(play_page)
+
+        # 후처리 파이프라인은 재생 page를 닫은 뒤 전용 page에서 실행한다.
+        if run_pipeline:
+            pipeline_page = None
+            try:
+                pipeline_page = await app_state.scraper.new_page()
+                await _run_post_play_pipeline(course, lec, pipeline_page)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                app_state.auto.error = f"파이프라인 오류: {e}"
+            finally:
+                if pipeline_page is not None:
+                    with suppress(Exception):
+                        await app_state.scraper.close_page(pipeline_page)
 
         await asyncio.sleep(1)
 

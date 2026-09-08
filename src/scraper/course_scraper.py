@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import re
 import sys
 import traceback
@@ -147,6 +148,27 @@ class CourseScraper:
             await self._browser.close()
         if self._pw:
             await self._pw.stop()
+
+    async def new_page(self) -> Page:
+        """로그인 쿠키를 승계한 새 page를 만든다.
+
+        강의를 재생할 때마다 새 page를 쓰면 add_init_script 누적·SPA 잔여 상태 같은
+        page 오염이 다음 강의로 번지지 않는다 (`fetch_all_details`와 같은 패턴).
+        """
+        if self._context is None:
+            raise RuntimeError("브라우저가 시작되지 않았습니다.")
+        return await self._context.new_page()
+
+    async def close_page(self, page: Page) -> None:
+        """new_page()로 만든 page를 폐기한다.
+
+        about:blank 선행 이동은 commons 뷰 세션(sl=1)을 정리해 다음 강의에서
+        ErrAlreadyInView가 발생하지 않게 하려는 것이다. 정리 실패는 무시한다.
+        """
+        with contextlib.suppress(Exception):
+            await page.goto("about:blank", wait_until="domcontentloaded", timeout=5000)
+        with contextlib.suppress(Exception):
+            await page.close()
 
     async def fetch_courses(self) -> list[Course]:
         """대시보드에서 수강 과목 목록 추출"""

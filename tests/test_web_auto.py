@@ -57,6 +57,29 @@ def _make_lecture(title: str) -> LectureItem:
     )
 
 
+class _FakePage:
+    """CourseScraper.new_page()가 반환하는 page 대역."""
+
+    def __init__(self, index: int):
+        self.index = index
+        self.closed = False
+
+
+class _PageFactoryMixin:
+    """강의별 page 격리를 관찰하기 위한 new_page/close_page 대역."""
+
+    def __init__(self):
+        self.opened: list[_FakePage] = []
+
+    async def new_page(self) -> _FakePage:
+        page = _FakePage(len(self.opened))
+        self.opened.append(page)
+        return page
+
+    async def close_page(self, page) -> None:
+        page.closed = True
+
+
 @pytest.mark.asyncio
 async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
     """1-C: 5강의마다 브라우저 중간 재시작. 11강의 → idx=5, idx=10 에서 2회."""
@@ -71,7 +94,7 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
 
     restart_count = [0]
 
-    class _TrackingScraper:
+    class _TrackingScraper(_PageFactoryMixin):
         _page = object()
 
         async def close(self):
@@ -86,7 +109,8 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
         async def fetch_all_details(self, courses):
             return [detail]
 
-    app_state.scraper = _TrackingScraper()
+    scraper = _TrackingScraper()
+    app_state.scraper = scraper
     app_state.courses = [course]
     app_state.details = [detail]
     app_state.auto.enabled = True  # 루프가 break되지 않으려면 True 필요
@@ -104,6 +128,60 @@ async def test_auto_cycle_restarts_browser_every_5_lectures(monkeypatch):
     await auto_route._run_auto_cycle()
 
     assert restart_count[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_uses_isolated_page_per_lecture(monkeypatch):
+    """강의마다 새 page를 만들고 재생이 끝나면 닫는다 (탭 상태 오염 방지)."""
+    course = Course(id="1", long_name="테스트 과목", href="/courses/1", term="2026-1")
+    lectures = [_make_lecture(f"강의{i}") for i in range(3)]
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=lectures)],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    scraper = _Scraper()
+    app_state.scraper = scraper
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    played_pages = []
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        played_pages.append(page)
+        return PlaybackState(current=10, duration=10, ended=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    # 재생 page 3개 + 파이프라인 page 3개
+    assert len(played_pages) == 3
+    assert len({id(p) for p in played_pages}) == 3  # 매번 다른 page
+    assert all(p.closed for p in scraper.opened)  # 열린 page는 전부 닫힘
+    assert app_state.scraper._page not in played_pages  # 메인 page는 재생에 쓰지 않음
 
 
 async def _noop(*args, **kwargs):
@@ -167,7 +245,7 @@ async def test_auto_cycle_does_not_complete_lecture_when_attendance_not_recorded
         weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
     )
 
-    class _Scraper:
+    class _Scraper(_PageFactoryMixin):
         _page = object()
 
         async def close(self):
@@ -189,7 +267,7 @@ async def test_auto_cycle_does_not_complete_lecture_when_attendance_not_recorded
 
     from src.player.background_player import PlaybackState
 
-    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None):
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
         return PlaybackState(
             current=1000,
             duration=1000,
