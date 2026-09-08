@@ -70,8 +70,7 @@ def record_attempt(
                 return 0, False
 
             row = conn.execute(
-                "SELECT attempt_count, suppressed FROM playback_attempts "
-                "WHERE course_id = ? AND lecture_url = ?",
+                "SELECT attempt_count, suppressed FROM playback_attempts WHERE course_id = ? AND lecture_url = ?",
                 (course_id, lecture_url),
             ).fetchone()
             prev_count = row["attempt_count"] if row else 0
@@ -140,9 +139,7 @@ def suppressed_urls(course_id: str | None = None) -> set[str]:
                     (course_id,),
                 ).fetchall()
             else:
-                rows = conn.execute(
-                    "SELECT lecture_url FROM playback_attempts WHERE suppressed = 1"
-                ).fetchall()
+                rows = conn.execute("SELECT lecture_url FROM playback_attempts WHERE suppressed = 1").fetchall()
             return {row["lecture_url"] for row in rows}
     except Exception:
         return set()
@@ -163,8 +160,7 @@ def list_suppressed() -> list[dict[str, Any]]:
     try:
         with db._connect() as conn:
             rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM playback_attempts WHERE suppressed = 1 "
-                "ORDER BY last_attempt_at DESC"
+                f"SELECT {_COLUMNS} FROM playback_attempts WHERE suppressed = 1 ORDER BY last_attempt_at DESC"
             ).fetchall()
             return [dict(row) for row in rows]
     except Exception:
@@ -181,8 +177,7 @@ def claim_notification(course_id: str, lecture_url: str) -> bool:
     try:
         with db._connect() as conn:
             cur = conn.execute(
-                "UPDATE playback_attempts SET notified = 1 "
-                "WHERE course_id = ? AND lecture_url = ? AND notified = 0",
+                "UPDATE playback_attempts SET notified = 1 WHERE course_id = ? AND lecture_url = ? AND notified = 0",
                 (course_id, lecture_url),
             )
             return cur.rowcount > 0

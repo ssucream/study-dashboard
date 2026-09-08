@@ -455,17 +455,13 @@ async def _run_auto_cycle() -> None:
                     # 재스크래핑으로 출석 미반영이 확정됨 — 재시도해도 같을 가능성이 높으므로
                     # 억제 카운트에 반영한다.
                     _log_attendance_not_recorded(course, lec, final_state)
-                    await _notify_playback_failure(
-                        course, lec, final_state, "LMS에 출석이 반영되지 않았습니다."
-                    )
+                    await _notify_playback_failure(course, lec, final_state, "LMS에 출석이 반영되지 않았습니다.")
                     await _record_ledger_attempt(course, lec, playback_ledger.RESULT_FAILED, final_state.error)
                 else:
                     # 브라우저 크래시·타임아웃·ErrAlreadyInView·영상 URL 추출 실패 등
                     # 일시적 오류. 다음 사이클에 재시도돼야 하므로 억제 카운트에 넣지 않는다.
                     _log_playback_error(course, lec, final_state)
-                    await _notify_playback_failure(
-                        course, lec, final_state, "재생 중 오류가 발생했습니다."
-                    )
+                    await _notify_playback_failure(course, lec, final_state, "재생 중 오류가 발생했습니다.")
                     await _record_ledger_attempt(course, lec, playback_ledger.RESULT_ERROR, final_state.error)
             elif final_state.ended:
                 app_state.playback.status = "completed"

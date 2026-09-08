@@ -555,9 +555,7 @@ async def test_auto_cycle_records_ledger_on_verification_failure(monkeypatch):
     from src.player.background_player import PlaybackState
 
     async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
-        return PlaybackState(
-            current=1000, duration=1000, ended=True, verified=False, error="출석 미반영"
-        )
+        return PlaybackState(current=1000, duration=1000, ended=True, verified=False, error="출석 미반영")
 
     monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
     monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
