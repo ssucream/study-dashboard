@@ -39,7 +39,9 @@ _DEFAULT_TOTAL_PAGE = 15
 
 # 재생 후 LMS 강의 목록 재스크래핑 검증 (C안 — 최종 진실 소스)
 _VERIFY_ATTEMPTS = 3
-_VERIFY_BACKOFF = (5, 15, 30)  # 각 시도 직전 대기(초). LMS 원장 반영 지연을 흡수한다.
+# 첫 시도는 즉시, 이후 재시도 직전 대기(초). LMS 원장 반영 지연을 흡수한다.
+# _VERIFY_ATTEMPTS=3이면 0 → 5s → 15s (총 20초). 마지막 값은 시도 수를 늘릴 때의 여유분.
+_VERIFY_BACKOFF = (5, 15, 30)
 # 스크래핑 attendance 값 중 출석 인정으로 볼 값
 _VERIFY_OK_ATTENDANCE = frozenset({"attendance", "late", "excused"})
 
@@ -530,7 +532,8 @@ async def _verify_via_rescrape(
     """
     got_signal = False
     for attempt in range(_VERIFY_ATTEMPTS):
-        delay = _VERIFY_BACKOFF[min(attempt, len(_VERIFY_BACKOFF) - 1)]
+        # 첫 시도는 즉시. 이미 반영된 강의를 확인하는 데 불필요한 대기를 넣지 않는다.
+        delay = 0 if attempt == 0 else _VERIFY_BACKOFF[min(attempt - 1, len(_VERIFY_BACKOFF) - 1)]
         if delay:
             await asyncio.sleep(delay)
         state.verify_attempts = attempt + 1
@@ -1350,7 +1353,15 @@ async def play_lecture(
         with contextlib.suppress(Exception):
             await _confirm_lms_attendance(page, api_url, result_state, log, set_error=not verify_enabled)
         if verify_enabled:
-            await _verify_via_rescrape(verify_fn, result_state, log)
+            # 검증은 최대 20초 대기하므로 사용자가 이 구간에서 중지할 수 있다.
+            # 재생 본체와 동일하게 취소로 처리해야 상위(auto/player)가 실패로 오인하지 않는다.
+            try:
+                await _verify_via_rescrape(verify_fn, result_state, log)
+            except asyncio.CancelledError:
+                log("  [검증] 사용자 중단 — 재스크래핑 검증 취소")
+                result_state.error = "사용자 중단"
+                result_state.cancelled = True
+                return result_state
         if result_state.error:
             log(f"  [검증] 출석 미반영 판정 — {result_state.error}")
         elif result_state.verified:

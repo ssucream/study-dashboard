@@ -1,5 +1,6 @@
 """background_player의 출석 반영 검증 로직 테스트."""
 
+import asyncio
 import json
 
 import pytest
@@ -264,6 +265,39 @@ async def test_verify_leaves_none_when_rescrape_always_fails():
     assert state.verified is None
     assert state.error is None  # 정상 재생을 실패로 만들지 않는다
     assert state.lms_completion is None
+
+
+@pytest.mark.asyncio
+async def test_verify_first_attempt_has_no_delay(monkeypatch):
+    """첫 시도는 즉시 — 이미 반영된 강의에 불필요한 대기를 넣지 않는다."""
+    monkeypatch.setattr(background_player, "_VERIFY_BACKOFF", (99, 99, 99))
+    slept: list[float] = []
+
+    async def _fake_sleep(sec):
+        slept.append(sec)
+
+    monkeypatch.setattr(background_player.asyncio, "sleep", _fake_sleep)
+    state = PlaybackState(duration=1000, ended=True)
+
+    await _verify_via_rescrape(_verify_returning(("completed", "attendance")), state, _log)
+
+    assert state.verified is True
+    assert slept == []  # 한 번도 대기하지 않음
+
+
+@pytest.mark.asyncio
+async def test_verify_propagates_cancellation(monkeypatch):
+    """검증 대기 중 취소는 삼키지 않고 그대로 전파돼야 상위가 cancelled로 처리한다."""
+    state = PlaybackState(duration=1000, ended=True)
+
+    async def _cancelled_fn():
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await _verify_via_rescrape(_cancelled_fn, state, _log)
+
+    assert state.verified is None
+    assert state.error is None
 
 
 @pytest.mark.asyncio
