@@ -58,6 +58,9 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   출석 미반영과 구분해 `play_failed`로 기록하고 억제 카운트에 넣지 않는다.
   수동 재생은 `verified=False`여도 완료 처리·후처리를 진행하고 경고만 남긴다
   (사용자가 의도적으로 1회 실행하는 경로라 토큰 낭비 차단 대상이 아니다).
+  출석 인정(`attendance`/`late`/`excused`) 상태면 `module_item-completed`가 아직 `incomplete`여도
+  자동 모드가 재생 대상에서 제외한다 (`LectureItem.needs_watch`). 재검증 성공 판정과
+  `needs_watch`는 동일한 상수 `src/scraper/models.py:ATTENDED_STATUSES`를 공유한다.
 - **페이지 격리**: 자동 모드와 수동 재생 모두 강의마다 `scraper.new_page()`로 새 Playwright
   page를 열고 끝나면 `close_page()`로 폐기한다. 같은 탭을 재사용하면 `add_init_script`와 SPA
   잔여 상태가 누적돼 사이클당 첫 강의만 출석 처리되던 버그가 재발한다.

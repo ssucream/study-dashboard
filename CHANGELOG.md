@@ -2,6 +2,20 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.10.3] - 2026-09-08
+
+### Fixed
+
+- **출석은 인정됐으나 `module_item-completed`가 안 된 강의를 자동모드가 반복 재생**: v26.10.2의
+  재검증 성공 조건은 `completion=="completed"` 또는 `attendance`가 출석 인정값
+  (`attendance`/`late`/`excused`)이면 성공으로 봤지만, 자동모드 재생 대상 판정
+  (`LectureItem.needs_watch`)은 `completion=="completed"`만 확인했다. LMS가 출석은 반영했으나
+  완료 플래그를 늦게 갱신하는 강의는 검증엔 통과해 억제 원장 행이 삭제되고, 다음 사이클에
+  `needs_watch=True`로 다시 pending에 들어와 순수 낭비 재생이 반복됐다. `needs_watch`가 출석
+  인정 상태(`attendance`/`late`/`excused`, `absent` 제외)를 완료로 취급하도록 수정하고, 재검증
+  성공 판정과 상수(`ATTENDED_STATUSES`)를 공유한다 (`src/scraper/models.py`,
+  `src/player/background_player.py`)
+
 ## [v26.10.2] - 2026-09-08
 
 ### Fixed
