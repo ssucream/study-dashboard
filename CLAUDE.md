@@ -49,6 +49,17 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 - **다운로드 경로**: 컨테이너 내 `/downloads` — 기본 compose에서 호스트 `./downloads`를 마운트.
 - **출력 파일**: mp4(영상), mp3(음성, ffmpeg 변환), txt(STT 결과), `_summarized.txt`(요약).
 - **백그라운드 재생**: video DOM 폴링(Plan A) + 진도 API 직접 호출(Plan B). Plan A 실패 시 자동 전환.
+- **재생 성공 판정**: 스크래핑한 `completion`/`attendance`가 **단일 진실 소스**다. 재생이 끝나면
+  `CourseScraper.fetch_item_status()`로 강의 목록을 재스크래핑해(3회, backoff 5/15/30초) 출석
+  반영을 확인하고, 미반영이 확정되면(`verified=False`) 후처리 파이프라인을 실행하지 않는다.
+  `background_player`는 `CourseScraper`를 import하지 않고 `verify_fn` 콜백으로 주입받는다.
+  검증 불가(`verified=None`)는 실패가 아니다 — 요약 누락을 막기 위해 파이프라인을 실행하고,
+  무한 반복은 억제 원장이 차단한다.
+- **페이지 격리**: 자동 모드와 수동 재생 모두 강의마다 `scraper.new_page()`로 새 Playwright
+  page를 열고 끝나면 `close_page()`로 폐기한다. 같은 탭을 재사용하면 `add_init_script`와 SPA
+  잔여 상태가 누적돼 사이클당 첫 강의만 출석 처리되던 버그가 재발한다.
+- **재시도 억제**: `src/playback_ledger.py` — 출석 미반영이 `AUTO_MAX_RETRY_PER_LECTURE`회
+  반복되면 자동 모드 pending에서 제외하고 텔레그램으로 1회 알린다. 웹 UI에서 해제 가능.
 - **자동 모드**: `backend/api/routes/auto.py` — 미완료 강의 일괄 재생 + 스케줄 실행.
 - **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
 - **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
@@ -86,6 +97,7 @@ study-dashboard/
 │   ├── crypto.py                         # 계정/API 키 암호화·복호화
 │   ├── db.py                             # SQLite 초기화/마이그레이션
 │   ├── event_log.py                      # 행위 로그 기록
+│   ├── playback_ledger.py                # 재생 재시도 억제 원장 (반복 실패 강의 pending 제외)
 │   ├── logger.py                         # 로깅 설정 / 스크래퍼 에러 로거
 │   ├── updater.py                        # GitHub 최신 버전 확인
 │   ├── auth/login.py                     # Playwright 로그인 처리 (SSO 사이트 선택 포함)
@@ -146,6 +158,23 @@ CREATE TABLE settings (
 -- event_logs:  행위 로그 (src/event_log.py)
 -- tasks:       완료/실패 백그라운드 Task 이력 (backend/api/task_manager.py)
 
+-- 재생 재시도 억제 원장 (src/playback_ledger.py, 스키마는 src/db.py._ensure_schema)
+CREATE TABLE IF NOT EXISTS playback_attempts (
+    course_id       TEXT NOT NULL,
+    lecture_url     TEXT NOT NULL,
+    course_name     TEXT NOT NULL DEFAULT '',
+    lecture_title   TEXT NOT NULL DEFAULT '',
+    week_label      TEXT NOT NULL DEFAULT '',
+    attempt_count   INTEGER NOT NULL DEFAULT 0,
+    last_result     TEXT NOT NULL DEFAULT '',   -- verified | unverified | failed
+    last_error      TEXT,
+    last_attempt_at TEXT NOT NULL,
+    suppressed      INTEGER NOT NULL DEFAULT 0, -- 1이면 자동모드 pending에서 제외
+    suppressed_at   TEXT,
+    notified        INTEGER NOT NULL DEFAULT 0, -- 텔레그램 1회 알림 발송 여부
+    PRIMARY KEY (course_id, lecture_url)
+);
+
 -- 예상 문제 (src/quiz/store.py, 스키마는 src/db.py._ensure_schema)
 -- quiz_sets:      문제셋 메타 (과목/주차범위/유형별 개수/생성일)
 -- quiz_questions: 문항 (유형/지문/보기/정답/채점기준/해설) — 생성 시점에 확정
@@ -165,6 +194,8 @@ CREATE TABLE settings (
 |----|------|------|
 | `LMS_USER_ID` | 학번 (메모리 세션 전용, DB 저장 금지) | — |
 | `LMS_PASSWORD` | 비밀번호 (메모리 세션 전용, DB 저장 금지) | — |
+| `PLAYBACK_VERIFY_ENABLED` | 재생 완료 후 LMS 강의 목록 재스크래핑으로 출석 반영 재검증 (비상 스위치) | `true` / `false` |
+| `AUTO_MAX_RETRY_PER_LECTURE` | 자동 모드의 강의당 최대 재시도 횟수. 초과 시 pending에서 제외하고 1회 알림. `0`=무제한 | `3` |
 | `DOWNLOAD_ENABLED` | 영상 다운로드 사용 여부 | `true` / `false` |
 | `DOWNLOAD_DIR` | 다운로드 경로 (비워두면 자동) | `/downloads` |
 | `DOWNLOAD_RULE` | 다운로드 규칙 | `mp4` / `mp3` / `both` |
