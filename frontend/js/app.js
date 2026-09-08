@@ -1075,12 +1075,12 @@ function _applyAutoStatus(s) {
 
   // 억제된 강의가 있으면 자동 모드 ON/OFF와 무관하게 알린다 —
   // 숨기면 "왜 이 강의만 안 돌지?"라는 새 미스터리가 된다.
+  // 배지는 상태 행 밖에 있으므로 자동 모드가 꺼져 있어도 stale 상태를 함께 노출하지 않는다.
   const suppressedBtn = $('#btn-auto-suppressions');
   const count = s.suppressed_count || 0;
   if (count > 0) {
     $('#auto-suppressed-label').textContent = `재시도 제외 ${count}개`;
     suppressedBtn.classList.remove('hidden');
-    statusRow.classList.remove('hidden');
   } else {
     suppressedBtn.classList.add('hidden');
   }

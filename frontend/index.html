@@ -296,12 +296,14 @@
               <span id="auto-pipeline-text" class="ml-1.5 text-slate-300"></span>
             </div>
             <p id="auto-error" class="hidden text-xs text-red-400"></p>
-            <button type="button" id="btn-auto-suppressions"
-              class="hidden self-start text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">
-              <i class="fa-solid fa-ban mr-1"></i><span id="auto-suppressed-label"></span>
-            </button>
             <div id="auto-warnings" class="hidden flex flex-col gap-1"></div>
           </div>
+          <!-- 억제 배지는 상태 행(auto-status-row) 밖에 둔다 — 자동 모드가 꺼져 있어도
+               보여야 하고, 켜져 있을 때만 유효한 stale 상태를 함께 노출하면 안 된다. -->
+          <button type="button" id="btn-auto-suppressions"
+            class="hidden mt-3 self-start text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">
+            <i class="fa-solid fa-ban mr-1"></i><span id="auto-suppressed-label"></span>
+          </button>
         </div>
       </div>
 

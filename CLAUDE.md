@@ -54,7 +54,10 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   반영을 확인하고, 미반영이 확정되면(`verified=False`) 후처리 파이프라인을 실행하지 않는다.
   `background_player`는 `CourseScraper`를 import하지 않고 `verify_fn` 콜백으로 주입받는다.
   검증 불가(`verified=None`)는 실패가 아니다 — 요약 누락을 막기 위해 파이프라인을 실행하고,
-  무한 반복은 억제 원장이 차단한다.
+  무한 반복은 억제 원장이 차단한다. 브라우저 크래시·타임아웃 같은 **일시적 재생 오류**는
+  출석 미반영과 구분해 `play_failed`로 기록하고 억제 카운트에 넣지 않는다.
+  수동 재생은 `verified=False`여도 완료 처리·후처리를 진행하고 경고만 남긴다
+  (사용자가 의도적으로 1회 실행하는 경로라 토큰 낭비 차단 대상이 아니다).
 - **페이지 격리**: 자동 모드와 수동 재생 모두 강의마다 `scraper.new_page()`로 새 Playwright
   page를 열고 끝나면 `close_page()`로 폐기한다. 같은 탭을 재사용하면 `add_init_script`와 SPA
   잔여 상태가 누적돼 사이클당 첫 강의만 출석 처리되던 버그가 재발한다.
@@ -194,7 +197,7 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 |----|------|------|
 | `LMS_USER_ID` | 학번 (메모리 세션 전용, DB 저장 금지) | — |
 | `LMS_PASSWORD` | 비밀번호 (메모리 세션 전용, DB 저장 금지) | — |
-| `PLAYBACK_VERIFY_ENABLED` | 재생 완료 후 LMS 강의 목록 재스크래핑으로 출석 반영 재검증 (비상 스위치) | `true` / `false` |
+| `PLAYBACK_VERIFY_ENABLED` | 재생 완료 후 LMS 강의 목록 재스크래핑으로 출석 반영 재검증 (비상 스위치). **재검증만** 끈다 — `_extract_watched_seconds` 우선순위와 `total_page` 산출 변경은 되돌리지 않으므로, 그 롤백은 해당 커밋 revert가 필요하다 | `true` / `false` |
 | `AUTO_MAX_RETRY_PER_LECTURE` | 자동 모드의 강의당 최대 재시도 횟수. 초과 시 pending에서 제외하고 1회 알림. `0`=무제한 | `3` |
 | `DOWNLOAD_ENABLED` | 영상 다운로드 사용 여부 | `true` / `false` |
 | `DOWNLOAD_DIR` | 다운로드 경로 (비워두면 자동) | `/downloads` |
