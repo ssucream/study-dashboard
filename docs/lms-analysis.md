@@ -201,15 +201,31 @@ Learning X 페이지
 
 ### 출석/완료 상태 판별
 
-```python
-# 출석 상태: [class*='attendance_status'] 클래스명 스캔
-for status in ("attendance", "late", "absent", "excused"):
-    if status in att_classes:
-        attendance = status
+실제 DOM (canvas.ssu.ac.kr Learning X, 2026-09 캡처):
 
-# 수강 완료: [class*='module_item-completed'] 클래스명 확인
-if "completed" in comp_classes and "incomplete" not in comp_classes:
-    completion = "completed"
+```html
+<!-- 출석됨 -->
+<span class="xnmb-module_item-meta_data-attendance_status attendance">출석</span>
+<!-- 출석 안 됨 -->
+<span class="xnmb-module_item-meta_data-attendance_status none">-</span>
+<!-- 출석 추적 안 하는 항목: 요소 자체가 없음 -->
+
+<!-- 완료 -->
+<span class="xnmb-module_item-completed completed">완료<i>…</i></span>
+<!-- 미완료 -->
+<span class="xnmb-module_item-completed incomplete">-</span>
+```
+
+상태 수식어(`attendance`/`none`/`completed`/`incomplete`)는 **별도 토큰**이다.
+기저 클래스명(`…attendance_status`, `module_item-completed`)에 `attendance`·`completed`가
+부분 문자열로 들어 있으므로, **부분 문자열 검색을 쓰면 상태가 `none`/`incomplete`여도
+잘못 매칭된다** (v26.10.4 이전 버그). 반드시 공백 분리 토큰 정확 매칭으로 판별한다:
+
+```python
+# src/scraper/course_scraper.py::_parse_attendance_class / _parse_completion_class
+tokens = set(class_attr.split())
+attendance = next((s for s in ("attendance", "late", "absent", "excused") if s in tokens), "none")
+completion = "completed" if "completed" in class_attr.split() else "incomplete"
 ```
 
 ---

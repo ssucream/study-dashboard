@@ -21,6 +21,33 @@ from src.scraper.models import (
 _BASE_URL = "https://canvas.ssu.ac.kr"
 _DASHBOARD_URL = f"{_BASE_URL}/"
 
+_ATTENDANCE_STATUSES = ("attendance", "late", "absent", "excused")
+
+
+def _parse_attendance_class(class_attr: str) -> str:
+    """출석 상태 요소의 class 속성에서 상태 수식어를 뽑는다.
+
+    class는 "xnmb-module_item-meta_data-attendance_status <상태>" 형태이며 <상태>는
+    별도 토큰이다. 기저 클래스명에 "attendance" 부분 문자열이 들어 있으므로
+    부분 문자열 검색이 아니라 공백 분리 토큰 정확 매칭으로 판별해야 한다
+    (상태가 `none`이어도 부분 문자열 검색은 "attendance"로 오판한다).
+    """
+    tokens = set(class_attr.split())
+    for status in _ATTENDANCE_STATUSES:
+        if status in tokens:
+            return status
+    return "none"
+
+
+def _parse_completion_class(class_attr: str) -> str:
+    """완료 여부 요소의 class 속성에서 완료 상태를 뽑는다.
+
+    class는 "xnmb-module_item-completed <상태>" 형태이며 <상태>는 `completed` 또는
+    `incomplete`. 기저 클래스명이 "completed"를 부분 문자열로 포함하므로 토큰 매칭한다.
+    """
+    return "completed" if "completed" in class_attr.split() else "incomplete"
+
+
 _TYPE_CLASS_MAP = {
     "movie": LectureType.MOVIE,
     "readystream": LectureType.READYSTREAM,
@@ -433,18 +460,12 @@ class CourseScraper:
         attendance = "none"
         att_el = await el.query_selector("[class*='attendance_status']")
         if att_el:
-            att_classes = await att_el.get_attribute("class") or ""
-            for status in ("attendance", "late", "absent", "excused"):
-                if status in att_classes:
-                    attendance = status
-                    break
+            attendance = _parse_attendance_class(await att_el.get_attribute("class") or "")
 
         completion = "incomplete"
         comp_el = await el.query_selector("[class*='module_item-completed']")
         if comp_el:
-            comp_classes = await comp_el.get_attribute("class") or ""
-            if "completed" in comp_classes and "incomplete" not in comp_classes:
-                completion = "completed"
+            completion = _parse_completion_class(await comp_el.get_attribute("class") or "")
 
         is_upcoming = False
         dday_el = await el.query_selector(".xncb-component-sub-d_day")
