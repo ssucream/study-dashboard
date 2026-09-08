@@ -674,6 +674,9 @@ async def reset_suppressions(req: SuppressionReset | None = None):
 
     course_id = req.course_id if req else None
     lecture_url = req.lecture_url if req else None
+    # 부분 인자를 조용히 전체 삭제로 처리하지 않는다.
+    if lecture_url and not course_id:
+        raise HTTPException(status_code=422, detail="course_id 없이 lecture_url만 지정할 수 없습니다.")
     return {"reset": playback_ledger.reset(course_id, lecture_url)}
 
 

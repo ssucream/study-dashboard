@@ -174,7 +174,13 @@ def mark_notified(course_id: str, lecture_url: str) -> None:
 
 
 def reset(course_id: str | None = None, lecture_url: str | None = None) -> int:
-    """억제를 해제한다 (행 삭제). 인자를 모두 생략하면 전체 해제. 삭제된 행 수 반환."""
+    """억제를 해제한다 (행 삭제). 인자를 모두 생략하면 전체 해제. 삭제된 행 수 반환.
+
+    lecture_url만 주고 course_id를 생략하는 것은 허용하지 않는다 — 조용히 전체 삭제로
+    떨어지면 사용자가 강의 1개를 해제하려다 원장 전체를 날리게 된다.
+    """
+    if lecture_url and not course_id:
+        return 0
     try:
         with db._connect() as conn:
             if course_id and lecture_url:

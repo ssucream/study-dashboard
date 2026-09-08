@@ -697,6 +697,22 @@ async def test_suppression_list_and_reset():
 
 
 @pytest.mark.asyncio
+async def test_suppression_reset_rejects_partial_arguments():
+    """course_id 없이 lecture_url만 오면 전체 삭제 대신 422."""
+    from fastapi import HTTPException
+
+    from src import playback_ledger
+
+    app_state.scraper = object()
+    playback_ledger.record_attempt("1", "url-a", result="failed", max_attempts=1)
+
+    with pytest.raises(HTTPException) as exc:
+        await auto_route.reset_suppressions(auto_route.SuppressionReset(lecture_url="url-a"))
+    assert exc.value.status_code == 422
+    assert playback_ledger.suppressed_urls() == {"url-a"}
+
+
+@pytest.mark.asyncio
 async def test_suppression_reset_all_with_empty_body():
     from src import playback_ledger
 

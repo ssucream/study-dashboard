@@ -108,6 +108,15 @@ def test_reset_removes_rows():
     assert playback_ledger.suppressed_urls() == set()
 
 
+def test_reset_rejects_lecture_url_without_course_id():
+    """course_id 없이 lecture_url만 주면 전체 삭제로 떨어지지 않고 no-op이어야 한다."""
+    _fail(max_attempts=1)
+    playback_ledger.record_attempt("2", "url-b", result="failed", max_attempts=1)
+
+    assert playback_ledger.reset(lecture_url="url-b") == 0
+    assert len(playback_ledger.suppressed_urls()) == 2
+
+
 def test_mark_notified_sets_flag():
     _fail(max_attempts=1)
     playback_ledger.mark_notified("1", "https://canvas.ssu.ac.kr/courses/1/items/1")
