@@ -2,6 +2,63 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.10.2] - 2026-09-08
+
+### Fixed
+
+- **자동 모드가 이미 재생한 강의를 매 사이클 다시 재생**: 사이클당 실제로 LMS 출석이 반영되는
+  강의는 브라우저 세션의 첫 번째 1개뿐이었고, 나머지는 재생·다운로드·STT·AI 요약까지 전부
+  수행한 뒤 다음 사이클에 다시 미시청으로 들어와 AI 토큰과 CPU를 강의 수 × 사이클 수만큼
+  낭비했다. 원인 2개를 각각 수정한다.
+  - **탭 공유(원인 B)**: 자동 루프가 모든 강의를 `app_state.scraper._page` 하나로 재생해
+    `add_init_script`와 SPA 잔여 상태가 누적됐다. `CourseScraper.new_page()`/`close_page()`를
+    추가하고 강의마다 새 page를 열어 재생한 뒤 폐기한다. 후처리 파이프라인도 재생 page를
+    닫은 뒤 전용 page에서 실행한다. 수동 재생과 자동 다운로드에도 같은 격리를 적용
+    (`src/scraper/course_scraper.py`, `backend/api/routes/auto.py`, `backend/api/routes/player.py`)
+  - **"완료" 정의 불일치(원인 A)**: 스크래핑 `completion`과 재생기 `ended`를 서로 대조하지
+    않아 출석 미반영 강의도 완료로 판정했다. 재생 후 강의 목록을 재스크래핑해
+    (`CourseScraper.fetch_item_status()`, 3회 시도 · 대기 0/5/15초) `completion`/`attendance`를
+    단일 진실 소스로 삼는다. 자동 모드에서 미반영이 확정되면(`verified=False`) 완료 처리도
+    후처리 파이프라인(다운로드/STT/요약)도 실행하지 않는다
+    (`src/player/background_player.py` — `play_lecture(verify_fn=...)`, `_verify_via_rescrape()`)
+- **일시적 재생 오류가 출석 미반영으로 오분류**: 브라우저 크래시·타임아웃·`ErrAlreadyInView`·
+  영상 URL 추출 실패가 `attendance_not_recorded`로 기록되고 억제 카운트에도 반영돼, 정상
+  강의가 3회 만에 자동 모드에서 제외될 수 있었다. 이제 `verified=False`(재스크래핑으로 확정)만
+  억제 대상이고, 일시적 오류는 `play_failed`로 기록하고 카운트하지 않는다.
+- **수동 재생이 출석 미반영으로 차단됨**: 사용자가 직접 실행한 재생은 `verified=False`여도
+  완료 처리와 자동 다운로드를 진행하고 경고만 표시한다 (파이프라인 차단은 매 사이클 반복하는
+  자동 모드 전용). `/api/player/status`에 `warning` 필드 추가.
+- **억제 해제 API의 부분 인자 전체 삭제**: `course_id` 없이 `lecture_url`만 넘기면 원장 전체가
+  삭제됐다. 이제 `422`로 거부한다.
+- **재스크래핑 검증 중 중지가 실패로 처리됨**: 검증 대기 구간의 취소를 재생 본체와 동일하게
+  `cancelled`로 처리한다.
+- **출석 검증 신호 정리**: `_extract_watched_seconds`가 `viewer_url`의 `endat`을 1순위로 썼는데
+  이 값은 우리가 `_report_completion`으로 써넣은 값이라 자기 자신을 검증하는 순환이었다.
+  명시적 누적 필드를 1순위로 올리고 `endat`은 폴백으로 강등하며, 사용한 출처를
+  `watched_source`로 이벤트 로그에 남긴다. `_confirm_lms_attendance`의 stale 게이트를 제거하고
+  진도 API `totalpage` 폴백을 세 경로 모두 `15`(프로덕션 실측값)로 통일하되, `GetTotalPage()`
+  라이브값을 얻으면 그것을 우선한다.
+
+### Added
+
+- **반복 실패 강의 재시도 억제 원장**: 출석이 끝내 반영되지 않는 강의를 자동 모드가 무한
+  재시도하지 않도록 강의별 시도 이력을 영속 기록한다. `AUTO_MAX_RETRY_PER_LECTURE`회
+  반복되면 pending에서 제외하고 텔레그램으로 1회 알린다.
+  - `src/playback_ledger.py` 신규, `src/db.py`에 `playback_attempts` 테이블 추가
+    (`CREATE TABLE IF NOT EXISTS` — 기존 `db/app.db` 무손상)
+  - 재생 성공 시 행을 삭제해 이력을 초기화하고, 검증 불가(`verified=None`)는 `unverified`로
+    카운트해 상시화되면 결국 억제되게 한다. 일시적 오류(`error`)는 카운트하지 않는다
+  - 알림 중복 방지는 `notified` 컬럼을 실제 가드로 선점(`claim_notification`)하므로 백엔드를
+    재시작해도 같은 강의에 대해 두 번 발송되지 않는다
+  - `GET`/`DELETE /api/auto/suppressions` + 자동 모드 카드의 "재시도 제외 N개" 배지·모달에서
+    개별/전체 해제 (`frontend/js/app.js`, `frontend/js/api.js`)
+  - `src/notifier/telegram_notifier.py` — `notify_playback_suppressed()`
+- **설정 항목 2개** (설정 > 재생):
+  - `PLAYBACK_VERIFY_ENABLED` (기본 `true`) — 끄면 기존 `ended` 판정으로 동작하는 비상 스위치.
+    **재검증만** 끈다 — `_extract_watched_seconds` 우선순위와 `total_page` 산출 변경은 되돌리지
+    않으므로, 그 롤백은 해당 커밋 revert가 필요하다
+  - `AUTO_MAX_RETRY_PER_LECTURE` (기본 `3`) — `0`이면 억제 비활성화(무제한 재시도)
+
 ## [v26.10.1] - 2026-09-08
 
 ### Fixed
