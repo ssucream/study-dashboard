@@ -88,6 +88,67 @@ def _log_attendance_not_recorded(course, lec, state) -> None:
         )
 
 
+async def _record_ledger_attempt(course, lec, result: str, error: str | None = None) -> None:
+    """재생 결과를 억제 원장에 기록하고, 이번 호출에서 억제되면 1회 알린다."""
+    from src import event_log, playback_ledger
+    from src.config import Config
+
+    count, suppressed_now = playback_ledger.record_attempt(
+        course.id,
+        lec.full_url,
+        course_name=course.long_name,
+        lecture_title=lec.title,
+        week_label=lec.week_label,
+        result=result,
+        error=error,
+        max_attempts=Config.get_auto_max_retry(),
+    )
+    if not suppressed_now:
+        return
+
+    logger.warning(
+        "재시도 억제: %s / %s — %d회 연속 출석 미반영으로 자동 모드 pending에서 제외",
+        course.long_name,
+        lec.title,
+        count,
+    )
+    with suppress(Exception):
+        event_log.record_event(
+            event_type="player",
+            action="playback_suppressed",
+            status="failed",
+            actor_user_id=app_state.user_id or None,
+            target_type="lecture",
+            course_id=course.id,
+            course_name=course.long_name,
+            lecture_title=lec.title,
+            lecture_url=lec.full_url,
+            week_label=lec.week_label,
+            error_code="playback_suppressed",
+            error_message=error,
+            message="반복 실패로 자동 재시도에서 제외했습니다.",
+            metadata={"attempt_count": count, "last_result": result},
+        )
+
+    if Config.should_notify("error"):
+        from src.notifier import telegram_notifier
+
+        loop = asyncio.get_running_loop()
+        with suppress(Exception):
+            await loop.run_in_executor(
+                None,
+                telegram_notifier.notify_playback_suppressed,
+                Config.TELEGRAM_BOT_TOKEN,
+                Config.TELEGRAM_CHAT_ID,
+                course.long_name,
+                lec.week_label,
+                lec.title,
+                count,
+                error or "",
+            )
+        playback_ledger.mark_notified(course.id, lec.full_url)
+
+
 async def _notify_attendance_not_recorded(course, lec, state) -> None:
     """출석 미반영 텔레그램 알림. 설정이 꺼져 있으면 아무것도 하지 않는다."""
     from src.config import Config
@@ -266,13 +327,16 @@ async def _run_auto_cycle() -> None:
         with suppress(Exception):
             await loop.run_in_executor(None, check_and_notify_deadlines, courses, details)
 
-    # 미시청 강의 수집
+    # 미시청 강의 수집 — 반복 실패로 억제된 강의는 제외한다 (사이클 시작 시 1회 벌크 조회).
+    from src import playback_ledger
+
+    suppressed = playback_ledger.suppressed_urls()
     pending: list[tuple] = []
     for course, detail in zip(courses, details, strict=False):
         if detail is None:
             continue
         for lec in detail.all_video_lectures:
-            if lec.needs_watch:
+            if lec.needs_watch and lec.full_url not in suppressed:
                 pending.append((course, lec))
 
     if not pending:
@@ -353,6 +417,7 @@ async def _run_auto_cycle() -> None:
                 )
                 _log_attendance_not_recorded(course, lec, final_state)
                 await _notify_attendance_not_recorded(course, lec, final_state)
+                await _record_ledger_attempt(course, lec, "failed", final_state.error)
             elif final_state.ended:
                 app_state.playback.status = "completed"
                 updated = _mark_lecture_completed(course.id, lec.full_url)
@@ -385,6 +450,11 @@ async def _run_auto_cycle() -> None:
                     final_state.verified,
                     final_state.progress_reported,
                     f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
+                )
+                # verified=True면 원장 행을 지워 이력을 초기화하고, 검증 불가(None)는
+                # unverified로 카운트해 상시화되면 결국 억제되게 한다.
+                await _record_ledger_attempt(
+                    course, lec, "verified" if final_state.verified else "unverified"
                 )
                 # verified is None(검증 불가)에서도 파이프라인을 돌린다 — 검증 인프라 장애로
                 # 정상 재생의 요약이 영구 누락되는 것을 막기 위함. 무한 반복은 억제 원장이 막는다.

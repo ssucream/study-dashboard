@@ -130,6 +130,27 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quiz_attempts_set ON quiz_attempts(set_id, created_at DESC)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS playback_attempts (
+            course_id       TEXT NOT NULL,
+            lecture_url     TEXT NOT NULL,
+            course_name     TEXT NOT NULL DEFAULT '',
+            lecture_title   TEXT NOT NULL DEFAULT '',
+            week_label      TEXT NOT NULL DEFAULT '',
+            attempt_count   INTEGER NOT NULL DEFAULT 0,
+            last_result     TEXT NOT NULL DEFAULT '',
+            last_error      TEXT,
+            last_attempt_at TEXT NOT NULL,
+            suppressed      INTEGER NOT NULL DEFAULT 0,
+            suppressed_at   TEXT,
+            notified        INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (course_id, lecture_url)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_playback_attempts_suppressed "
+        "ON playback_attempts(suppressed, last_attempt_at DESC)"
+    )
 
 
 def init() -> None:

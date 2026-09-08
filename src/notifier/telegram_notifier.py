@@ -150,6 +150,27 @@ def notify_auto_error(
     return _send_message(bot_token, chat_id, text)
 
 
+def notify_playback_suppressed(
+    bot_token: str,
+    chat_id: str,
+    course_name: str,
+    week_label: str,
+    lecture_title: str,
+    attempt_count: int,
+    error_msg: str = "",
+) -> bool:
+    """반복 실패로 자동 모드 재시도 대상에서 제외됐음을 1회 알린다."""
+    label = _lecture_label(course_name, week_label, lecture_title)
+    text = (
+        f"[자동 모드] {label}\n"
+        f"{attempt_count}회 연속 출석 미반영 — 자동 재시도에서 제외했습니다.\n"
+        f"웹 대시보드에서 '재시도 제외' 목록을 확인해 해제할 수 있습니다."
+    )
+    if error_msg:
+        text += f"\n마지막 오류: {error_msg}"
+    return _send_message(bot_token, chat_id, text)
+
+
 def notify_summary_complete(
     bot_token: str,
     chat_id: str,

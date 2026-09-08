@@ -33,6 +33,7 @@ async def get_settings():
     require_auth()
     return {
         "PLAYBACK_VERIFY_ENABLED": Config.PLAYBACK_VERIFY_ENABLED,
+        "AUTO_MAX_RETRY_PER_LECTURE": str(Config.get_auto_max_retry()),
         "DOWNLOAD_ENABLED": Config.DOWNLOAD_ENABLED,
         "DOWNLOAD_DIR": Config.get_download_dir(),
         "DOWNLOAD_RULE": Config.get_download_rule(),
@@ -68,6 +69,7 @@ async def get_settings():
 
 class SettingsUpdate(BaseModel):
     PLAYBACK_VERIFY_ENABLED: str | None = None
+    AUTO_MAX_RETRY_PER_LECTURE: str | None = None
     DOWNLOAD_ENABLED: str | None = None
     DOWNLOAD_RULE: str | None = None
     AUTO_DOWNLOAD_AFTER_PLAY: str | None = None
@@ -126,6 +128,9 @@ async def update_settings(body: SettingsUpdate):
             val = normalize_download_rule(val)
         elif key == "TELEGRAM_DEADLINE_THRESHOLDS":
             val = ",".join(str(h) for h in parse_deadline_thresholds(val))
+        elif key == "AUTO_MAX_RETRY_PER_LECTURE":
+            # 비정수/음수는 기본값 3으로 정규화 (0은 무제한이므로 그대로 둔다)
+            val = val.strip() if val.strip().isdigit() else "3"
         to_save[key] = encrypt(val) if key in _SENSITIVE and val else val
 
     download_enabled = to_save.get("DOWNLOAD_ENABLED", Config.DOWNLOAD_ENABLED) == "true"

@@ -150,6 +150,8 @@ class Config:
     # 재생 완료 후 LMS 강의 목록을 재스크래핑해 출석 반영을 재검증할지 (비상 스위치).
     # false면 기존 ended 판정으로 동작한다.
     PLAYBACK_VERIFY_ENABLED: str = "true"
+    # 자동 모드가 한 강의를 재시도할 최대 횟수. 초과하면 pending에서 제외한다. "0"=무제한.
+    AUTO_MAX_RETRY_PER_LECTURE: str = "3"
 
     @classmethod
     def load(cls) -> None:
@@ -200,6 +202,7 @@ class Config:
         cls.AUTO_ENABLED = db.get("AUTO_ENABLED", "false")
         cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
         cls.PLAYBACK_VERIFY_ENABLED = db.get("PLAYBACK_VERIFY_ENABLED", "true")
+        cls.AUTO_MAX_RETRY_PER_LECTURE = db.get("AUTO_MAX_RETRY_PER_LECTURE", "3")
 
     @classmethod
     def get_ai_api_key(cls, agent: str | None = None) -> str:
@@ -286,6 +289,14 @@ class Config:
         hours = sorted({int(x) for x in (cls.AUTO_SCHEDULE_HOURS or "").split(",") if x.strip().lstrip("-").isdigit()})
         valid = [h for h in hours if 0 <= h <= 23]
         return valid or [9, 13, 18, 23]
+
+    @classmethod
+    def get_auto_max_retry(cls) -> int:
+        """자동 모드의 강의당 최대 재시도 횟수. 비정수/음수는 기본값 3, "0"은 무제한(0)."""
+        raw = (cls.AUTO_MAX_RETRY_PER_LECTURE or "").strip()
+        if not raw.isdigit():
+            return 3
+        return int(raw)
 
     @classmethod
     def set_session_credentials(cls, user_id: str, password: str) -> None:

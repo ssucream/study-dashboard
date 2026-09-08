@@ -404,6 +404,169 @@ async def test_auto_cycle_runs_pipeline_when_verification_unavailable(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_auto_cycle_skips_suppressed_lectures(monkeypatch):
+    """억제 원장에 등록된 강의는 pending에 포함되지 않는다."""
+    from src import playback_ledger
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    suppressed_lec = _make_lecture("억제된강의")
+    normal_lec = _make_lecture("정상강의")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[suppressed_lec, normal_lec])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    playback_ledger.record_attempt(course.id, suppressed_lec.full_url, result="failed", max_attempts=1)
+    assert playback_ledger.is_suppressed(course.id, suppressed_lec.full_url) is True
+
+    from src.player.background_player import PlaybackState
+
+    played = []
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        played.append(url)
+        return PlaybackState(current=10, duration=10, ended=True, verified=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    assert played == [normal_lec.full_url]
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_records_ledger_on_verification_failure(monkeypatch):
+    """verified=False면 원장에 실패 시도로 기록되고, 한도 도달 시 억제된다."""
+    from src import playback_ledger
+    from src.config import Config
+
+    monkeypatch.setattr(Config, "AUTO_MAX_RETRY_PER_LECTURE", "1")
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        return PlaybackState(
+            current=1000, duration=1000, ended=True, verified=False, error="출석 미반영"
+        )
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    rows = playback_ledger.list_suppressed()
+    assert len(rows) == 1
+    assert rows[0]["lecture_title"] == "1주차 Intro"
+    assert rows[0]["last_result"] == "failed"
+    events = event_log.list_events(event_type="player", limit=10)
+    assert "playback_suppressed" in [e["action"] for e in events]
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_clears_ledger_when_verified(monkeypatch):
+    """verified=True면 이전 실패 이력이 삭제된다."""
+    from src import playback_ledger
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    playback_ledger.record_attempt(course.id, lecture.full_url, result="failed", max_attempts=5)
+
+    from src.player.background_player import PlaybackState
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        return PlaybackState(current=10, duration=10, ended=True, verified=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    assert playback_ledger.is_suppressed(course.id, lecture.full_url) is False
+
+
+@pytest.mark.asyncio
 async def test_auto_start_persists_state_to_db(monkeypatch):
     """자동 모드 시작 시 활성 상태·스케줄을 DB에 저장해 백엔드 재시작 후 복원 가능하게 한다."""
     import src.db as db_module

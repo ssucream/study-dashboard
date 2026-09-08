@@ -21,6 +21,20 @@ def test_connect_reuses_schema_cache_per_path(tmp_path, monkeypatch):
     assert db.get("key") == "value"
 
 
+def test_ensure_schema_creates_playback_attempts(tmp_path, monkeypatch):
+    """억제 원장 테이블이 기존 DB에 IF NOT EXISTS로 추가된다."""
+    monkeypatch.setattr(db, "_schema_ready_paths", set())
+    monkeypatch.setattr(db, "_db_path", lambda: tmp_path / "app.db")
+    db.init()
+
+    with db._connect() as conn:
+        names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(playback_attempts)")}
+
+    assert "playback_attempts" in names
+    assert {"course_id", "lecture_url", "attempt_count", "suppressed", "notified"} <= cols
+
+
 def test_db_path_does_not_depend_on_cwd(monkeypatch):
     """/db가 없으면 CWD가 아니라 프로젝트 고정 경로를 기준으로 db/를 사용해야 한다."""
     monkeypatch.setattr(Path, "exists", lambda self: str(self) != "/db")
