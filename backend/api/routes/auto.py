@@ -584,6 +584,8 @@ def resume_persisted_auto() -> bool:
 @router.get("/status")
 async def auto_status():
     require_auth()
+    from src import playback_ledger
+
     a = app_state.auto
     return {
         "enabled": a.enabled,
@@ -595,7 +597,33 @@ async def auto_status():
         "error": a.error,
         "task_id": a.task_id,
         "pipeline_stage": a.pipeline_stage or None,
+        "suppressed_count": len(playback_ledger.suppressed_urls()),
     }
+
+
+class SuppressionReset(BaseModel):
+    course_id: str | None = None
+    lecture_url: str | None = None
+
+
+@router.get("/suppressions")
+async def list_suppressions():
+    """반복 실패로 자동 재시도에서 제외된 강의 목록."""
+    require_auth()
+    from src import playback_ledger
+
+    return {"suppressions": playback_ledger.list_suppressed()}
+
+
+@router.delete("/suppressions")
+async def reset_suppressions(req: SuppressionReset | None = None):
+    """억제를 해제한다. body가 비어 있으면 전체 해제."""
+    require_auth()
+    from src import playback_ledger
+
+    course_id = req.course_id if req else None
+    lecture_url = req.lecture_url if req else None
+    return {"reset": playback_ledger.reset(course_id, lecture_url)}
 
 
 @router.post("/start")

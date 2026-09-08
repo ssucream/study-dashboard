@@ -1,3 +1,14 @@
+export async function getAutoSuppressions() {
+  const res = await api('GET', '/api/auto/suppressions');
+  return res.suppressions || [];
+}
+
+export async function resetAutoSuppression(courseId, lectureUrl) {
+  const body = courseId && lectureUrl ? { course_id: courseId, lecture_url: lectureUrl } : {};
+  const res = await api('DELETE', '/api/auto/suppressions', body);
+  return res.reset || 0;
+}
+
 export async function api(method, path, body, timeoutMs = 0) {
   const controller = timeoutMs > 0 ? new AbortController() : null;
   const opts = {

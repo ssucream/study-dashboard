@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { api, getAutoSuppressions, resetAutoSuppression } from './api.js';
 import { state } from './state.js';
 import { $, $$, esc, fmtTime } from './utils.js';
 import { applySettingsVisibility, loadAppSettings, loadSettings } from './settings.js';
@@ -1065,7 +1065,88 @@ function _applyAutoStatus(s) {
   } else {
     statusRow.classList.add('hidden');
   }
+
+  // 억제된 강의가 있으면 자동 모드 ON/OFF와 무관하게 알린다 —
+  // 숨기면 "왜 이 강의만 안 돌지?"라는 새 미스터리가 된다.
+  const suppressedBtn = $('#btn-auto-suppressions');
+  const count = s.suppressed_count || 0;
+  if (count > 0) {
+    $('#auto-suppressed-label').textContent = `재시도 제외 ${count}개`;
+    suppressedBtn.classList.remove('hidden');
+    statusRow.classList.remove('hidden');
+  } else {
+    suppressedBtn.classList.add('hidden');
+  }
 }
+
+// ── 재시도 제외 모달 ──────────────────────────────────────────
+async function renderSuppressions() {
+  const listEl = $('#suppressions-list');
+  listEl.textContent = '불러오는 중...';
+  let rows;
+  try {
+    rows = await getAutoSuppressions();
+  } catch (err) {
+    listEl.textContent = `불러오기 실패: ${err.message}`;
+    return;
+  }
+  if (!rows.length) {
+    listEl.innerHTML = '<p class="text-sm text-slate-500 text-center py-6">재시도에서 제외된 강의가 없습니다.</p>';
+    return;
+  }
+  listEl.innerHTML = rows.map(r => `
+    <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-3 flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-sm text-white font-medium break-words">${esc(r.lecture_title || '(제목 없음)')}</p>
+        <p class="text-xs text-slate-500 mt-0.5">${esc(r.course_name || '')} ${esc(r.week_label || '')}</p>
+        <p class="text-xs text-slate-500 mt-1">시도 ${r.attempt_count}회 · ${esc(r.last_result || '')} · ${esc(r.suppressed_at || '')}</p>
+        ${r.last_error ? `<p class="text-xs text-red-400 mt-1 break-words">${esc(r.last_error)}</p>` : ''}
+      </div>
+      <button type="button" data-course-id="${esc(r.course_id)}" data-lecture-url="${esc(r.lecture_url)}"
+        class="suppression-allow shrink-0 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold rounded-lg transition-all">
+        재시도 허용
+      </button>
+    </div>
+  `).join('');
+
+  $$('.suppression-allow', listEl).forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await resetAutoSuppression(btn.dataset.courseId, btn.dataset.lectureUrl);
+        await renderSuppressions();
+        updateAutoUI();
+      } catch (err) {
+        btn.disabled = false;
+        alert(`해제 실패: ${err.message}`);
+      }
+    });
+  });
+}
+
+$('#btn-auto-suppressions')?.addEventListener('click', () => {
+  $('#modal-suppressions').classList.remove('hidden');
+  renderSuppressions();
+});
+
+$('#btn-suppressions-close')?.addEventListener('click', () => {
+  $('#modal-suppressions').classList.add('hidden');
+});
+
+$('#modal-suppressions')?.addEventListener('click', (e) => {
+  if (e.target === $('#modal-suppressions')) $('#modal-suppressions').classList.add('hidden');
+});
+
+$('#btn-suppressions-reset-all')?.addEventListener('click', async () => {
+  if (!confirm('제외된 강의를 모두 다시 재시도 대상으로 되돌릴까요?')) return;
+  try {
+    await resetAutoSuppression();
+    await renderSuppressions();
+    updateAutoUI();
+  } catch (err) {
+    alert(`해제 실패: ${err.message}`);
+  }
+});
 
 async function updateAutoUI() {
   try { _applyAutoStatus(await api('GET', '/api/auto/status')); } catch {}

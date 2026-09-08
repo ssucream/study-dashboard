@@ -598,6 +598,59 @@ async def test_auto_stop_persists_disabled_state(monkeypatch):
     assert db_module.get("AUTO_ENABLED") == "false"
 
 
+@pytest.mark.asyncio
+async def test_suppression_endpoints_require_auth():
+    from fastapi import HTTPException
+
+    app_state.scraper = None
+    with pytest.raises(HTTPException) as exc:
+        await auto_route.list_suppressions()
+    assert exc.value.status_code == 401
+    with pytest.raises(HTTPException):
+        await auto_route.reset_suppressions(None)
+
+
+@pytest.mark.asyncio
+async def test_suppression_list_and_reset():
+    from src import playback_ledger
+
+    app_state.scraper = object()  # require_auth 통과
+    playback_ledger.record_attempt(
+        "1",
+        "url-a",
+        course_name="성서읽기",
+        lecture_title="1주차 Intro",
+        week_label="1주차",
+        result="failed",
+        error="출석 미반영",
+        max_attempts=1,
+    )
+
+    listed = await auto_route.list_suppressions()
+    assert len(listed["suppressions"]) == 1
+    assert listed["suppressions"][0]["lecture_title"] == "1주차 Intro"
+
+    status = await auto_route.auto_status()
+    assert status["suppressed_count"] == 1
+
+    result = await auto_route.reset_suppressions(auto_route.SuppressionReset(course_id="1", lecture_url="url-a"))
+    assert result == {"reset": 1}
+    assert (await auto_route.list_suppressions())["suppressions"] == []
+    assert (await auto_route.auto_status())["suppressed_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_suppression_reset_all_with_empty_body():
+    from src import playback_ledger
+
+    app_state.scraper = object()
+    playback_ledger.record_attempt("1", "url-a", result="failed", max_attempts=1)
+    playback_ledger.record_attempt("2", "url-b", result="failed", max_attempts=1)
+
+    assert await auto_route.reset_suppressions(None) == {"reset": 2}
+    assert playback_ledger.suppressed_urls() == set()
+
+
 def test_get_auto_schedule_hours_parses_and_falls_back():
     from src.config import Config
 
