@@ -167,7 +167,8 @@ async def _record_ledger_attempt(course, lec, result: str, error: str | None = N
             metadata={"attempt_count": count, "last_result": result},
         )
 
-    if Config.should_notify("error"):
+    # notified 컬럼을 실제 가드로 선점한다 — 백엔드 재시작 후 재억제돼도 중복 발송되지 않는다.
+    if Config.should_notify("error") and playback_ledger.claim_notification(course.id, lec.full_url):
         from src.notifier import telegram_notifier
 
         loop = asyncio.get_running_loop()
@@ -183,7 +184,6 @@ async def _record_ledger_attempt(course, lec, result: str, error: str | None = N
                 count,
                 error or "",
             )
-        playback_ledger.mark_notified(course.id, lec.full_url)
 
 
 async def _notify_playback_failure(course, lec, state, fallback: str) -> None:
@@ -648,7 +648,7 @@ async def auto_status():
         "error": a.error,
         "task_id": a.task_id,
         "pipeline_stage": a.pipeline_stage or None,
-        "suppressed_count": len(playback_ledger.suppressed_urls()),
+        "suppressed_count": playback_ledger.suppressed_count(),
     }
 
 

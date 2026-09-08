@@ -148,6 +148,16 @@ def suppressed_urls(course_id: str | None = None) -> set[str]:
         return set()
 
 
+def suppressed_count() -> int:
+    """억제된 강의 수. 배지 표시용 — URL 집합을 만들 필요가 없을 때 쓴다."""
+    try:
+        with db._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM playback_attempts WHERE suppressed = 1").fetchone()
+            return int(row["n"]) if row else 0
+    except Exception:
+        return 0
+
+
 def list_suppressed() -> list[dict[str, Any]]:
     """억제된 강의 목록 (API/UI용). 최근 시도 순."""
     try:
@@ -161,16 +171,23 @@ def list_suppressed() -> list[dict[str, Any]]:
         return []
 
 
-def mark_notified(course_id: str, lecture_url: str) -> None:
-    """텔레그램 억제 알림 발송 완료를 기록한다 (중복 발송 방지)."""
+def claim_notification(course_id: str, lecture_url: str) -> bool:
+    """억제 알림 발송 권한을 선점한다. 아직 발송 전이었으면 notified=1로 표시하고 True.
+
+    `notified`를 실제 가드로 읽으므로, 백엔드 재시작이나 중복 호출로 같은 강의에 대해
+    억제 알림이 두 번 나가지 않는다. (`suppressed_now` 하나만으로는 프로세스 안에서만
+    유효해 재시작 후 재억제 시 다시 발송된다.)
+    """
     try:
         with db._connect() as conn:
-            conn.execute(
-                "UPDATE playback_attempts SET notified = 1 WHERE course_id = ? AND lecture_url = ?",
+            cur = conn.execute(
+                "UPDATE playback_attempts SET notified = 1 "
+                "WHERE course_id = ? AND lecture_url = ? AND notified = 0",
                 (course_id, lecture_url),
             )
+            return cur.rowcount > 0
     except Exception:
-        pass
+        return False
 
 
 def reset(course_id: str | None = None, lecture_url: str | None = None) -> int:

@@ -117,10 +117,36 @@ def test_reset_rejects_lecture_url_without_course_id():
     assert len(playback_ledger.suppressed_urls()) == 2
 
 
-def test_mark_notified_sets_flag():
+def test_claim_notification_is_idempotent():
+    """알림 권한은 1회만 선점된다 — 재시작 후 재억제돼도 중복 발송되지 않는다."""
+    url = "https://canvas.ssu.ac.kr/courses/1/items/1"
     _fail(max_attempts=1)
-    playback_ledger.mark_notified("1", "https://canvas.ssu.ac.kr/courses/1/items/1")
+
+    assert playback_ledger.claim_notification("1", url) is True
     assert playback_ledger.list_suppressed()[0]["notified"] == 1
+    assert playback_ledger.claim_notification("1", url) is False
+
+    # 이후 실패가 더 쌓여도 이미 알린 강의는 다시 알리지 않는다
+    _fail(max_attempts=1)
+    assert playback_ledger.claim_notification("1", url) is False
+
+    # 성공으로 행이 지워진 뒤 다시 억제되면 새로 알린다
+    playback_ledger.record_attempt("1", url, result=playback_ledger.RESULT_VERIFIED)
+    _fail(max_attempts=1)
+    assert playback_ledger.claim_notification("1", url) is True
+
+
+def test_claim_notification_on_missing_row_returns_false():
+    assert playback_ledger.claim_notification("nope", "nope") is False
+
+
+def test_suppressed_count_matches_list():
+    _fail(max_attempts=1)
+    playback_ledger.record_attempt("2", "url-b", result="failed", max_attempts=1)
+    playback_ledger.record_attempt("3", "url-c", result="unverified", max_attempts=9)
+
+    assert playback_ledger.suppressed_count() == 2
+    assert playback_ledger.suppressed_count() == len(playback_ledger.list_suppressed())
 
 
 def test_get_auto_max_retry_normalizes():
