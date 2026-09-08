@@ -54,17 +54,20 @@ def _make_verify_fn(course, lec):
 
 
 def _log_attendance_not_recorded(course, lec, state) -> None:
-    """출석 미반영(또는 재생 실패)을 로그·이벤트로 남긴다."""
+    """재스크래핑으로 출석 미반영이 **확정**된 경우만 기록한다.
+
+    action/error_code를 `attendance_not_recorded`로 고정하므로, 일시적 재생 오류를
+    여기로 흘리면 Step 5-4의 `verified` 비율 측정 쿼리가 오염된다.
+    """
     from backend.api.routes.player import _verification_metadata
 
     from src import event_log
 
     ratio = state.lms_progress_ratio
     logger.warning(
-        "출석 미반영: %s / %s — 검증=%s completion=%s attendance=%s LMS진도=%s",
+        "출석 미반영 확정: %s / %s — completion=%s attendance=%s LMS진도=%s",
         course.long_name,
         lec.title,
-        state.verified,
         state.lms_completion,
         state.lms_attendance,
         f"{ratio * 100:.0f}%" if ratio is not None else "확인불가",
@@ -82,6 +85,40 @@ def _log_attendance_not_recorded(course, lec, state) -> None:
             lecture_url=lec.full_url,
             week_label=lec.week_label,
             error_code="attendance_not_recorded",
+            error_message=state.error,
+            log_path=app_state.playback.log_path,
+            metadata=_verification_metadata(state),
+        )
+
+
+def _log_playback_error(course, lec, state) -> None:
+    """일시적 재생 오류(크래시·타임아웃·ErrAlreadyInView 등)를 기록한다.
+
+    출석 미반영과 별개 action(`play_failed`)으로 남겨 측정 쿼리를 분리한다.
+    """
+    from backend.api.routes.player import _verification_metadata
+
+    from src import event_log
+
+    logger.warning(
+        "재생 실패: %s / %s — %s (다음 사이클 재시도)",
+        course.long_name,
+        lec.title,
+        state.error,
+    )
+    with suppress(Exception):
+        event_log.record_event(
+            event_type="player",
+            action="play_failed",
+            status="failed",
+            actor_user_id=app_state.user_id or None,
+            target_type="lecture",
+            course_id=course.id,
+            course_name=course.long_name,
+            lecture_title=lec.title,
+            lecture_url=lec.full_url,
+            week_label=lec.week_label,
+            error_code="playback_error",
             error_message=state.error,
             log_path=app_state.playback.log_path,
             metadata=_verification_metadata(state),
@@ -149,8 +186,8 @@ async def _record_ledger_attempt(course, lec, result: str, error: str | None = N
         playback_ledger.mark_notified(course.id, lec.full_url)
 
 
-async def _notify_attendance_not_recorded(course, lec, state) -> None:
-    """출석 미반영 텔레그램 알림. 설정이 꺼져 있으면 아무것도 하지 않는다."""
+async def _notify_playback_failure(course, lec, state, fallback: str) -> None:
+    """재생 실패/출석 미반영 텔레그램 알림. 설정이 꺼져 있으면 아무것도 하지 않는다."""
     from src.config import Config
     from src.notifier import telegram_notifier
 
@@ -166,7 +203,7 @@ async def _notify_attendance_not_recorded(course, lec, state) -> None:
             course.long_name,
             lec.week_label,
             lec.title,
-            state.error or "LMS에 출석이 반영되지 않았습니다.",
+            state.error or fallback,
         )
 
 
@@ -409,15 +446,27 @@ async def _run_auto_cycle() -> None:
                 app_state.auto.enabled = False
                 break
             elif final_state.error or final_state.verified is False:
-                # 재생 자체 실패이거나, 재생은 끝났지만 재스크래핑에서 출석 미반영이 확정된 경우.
                 # 완료 처리하지 않고 후처리 파이프라인도 돌리지 않는다 (토큰 낭비 차단).
                 app_state.playback.status = "error"
                 app_state.playback.log_path = _write_playback_log(
                     lec.title, lec.full_url, final_state.error or "출석 미반영", log_buffer
                 )
-                _log_attendance_not_recorded(course, lec, final_state)
-                await _notify_attendance_not_recorded(course, lec, final_state)
-                await _record_ledger_attempt(course, lec, "failed", final_state.error)
+                if final_state.verified is False:
+                    # 재스크래핑으로 출석 미반영이 확정됨 — 재시도해도 같을 가능성이 높으므로
+                    # 억제 카운트에 반영한다.
+                    _log_attendance_not_recorded(course, lec, final_state)
+                    await _notify_playback_failure(
+                        course, lec, final_state, "LMS에 출석이 반영되지 않았습니다."
+                    )
+                    await _record_ledger_attempt(course, lec, playback_ledger.RESULT_FAILED, final_state.error)
+                else:
+                    # 브라우저 크래시·타임아웃·ErrAlreadyInView·영상 URL 추출 실패 등
+                    # 일시적 오류. 다음 사이클에 재시도돼야 하므로 억제 카운트에 넣지 않는다.
+                    _log_playback_error(course, lec, final_state)
+                    await _notify_playback_failure(
+                        course, lec, final_state, "재생 중 오류가 발생했습니다."
+                    )
+                    await _record_ledger_attempt(course, lec, playback_ledger.RESULT_ERROR, final_state.error)
             elif final_state.ended:
                 app_state.playback.status = "completed"
                 updated = _mark_lecture_completed(course.id, lec.full_url)
@@ -454,7 +503,9 @@ async def _run_auto_cycle() -> None:
                 # verified=True면 원장 행을 지워 이력을 초기화하고, 검증 불가(None)는
                 # unverified로 카운트해 상시화되면 결국 억제되게 한다.
                 await _record_ledger_attempt(
-                    course, lec, "verified" if final_state.verified else "unverified"
+                    course,
+                    lec,
+                    playback_ledger.RESULT_VERIFIED if final_state.verified else playback_ledger.RESULT_UNVERIFIED,
                 )
                 # verified is None(검증 불가)에서도 파이프라인을 돌린다 — 검증 인프라 장애로
                 # 정상 재생의 요약이 영구 누락되는 것을 막기 위함. 무한 반복은 억제 원장이 막는다.

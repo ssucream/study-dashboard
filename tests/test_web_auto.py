@@ -404,6 +404,63 @@ async def test_auto_cycle_runs_pipeline_when_verification_unavailable(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_auto_cycle_transient_error_not_counted_as_attendance_failure(monkeypatch):
+    """일시적 재생 오류는 출석 미반영과 다르게 기록되고 억제 카운트에 들어가지 않는다."""
+    from src import playback_ledger
+    from src.config import Config
+
+    monkeypatch.setattr(Config, "AUTO_MAX_RETRY_PER_LECTURE", "1")
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    from src.player.background_player import PlaybackState
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        # verified는 None(검증까지 못 감) — 브라우저 크래시류의 일시적 실패
+        return PlaybackState(current=3, duration=1000, ended=False, error="비디오 프레임을 찾지 못했습니다.")
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    # max_attempts=1이지만 일시적 오류이므로 억제되지 않는다
+    assert playback_ledger.is_suppressed(course.id, lecture.full_url) is False
+    actions = [e["action"] for e in event_log.list_events(event_type="player", limit=10)]
+    assert "play_failed" in actions
+    assert "attendance_not_recorded" not in actions
+    assert "playback_suppressed" not in actions
+
+
+@pytest.mark.asyncio
 async def test_auto_cycle_skips_suppressed_lectures(monkeypatch):
     """억제 원장에 등록된 강의는 pending에 포함되지 않는다."""
     from src import playback_ledger

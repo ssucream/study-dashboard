@@ -17,9 +17,14 @@ from src import db
 from src.config import KST
 
 # record_attempt(result=...)에 넘길 수 있는 값
-RESULT_VERIFIED = "verified"
-RESULT_UNVERIFIED = "unverified"
-RESULT_FAILED = "failed"
+RESULT_VERIFIED = "verified"  # 출석 확인 — 행 삭제(이력 초기화)
+RESULT_UNVERIFIED = "unverified"  # 검증 불가 — 상시화되면 결국 억제
+RESULT_FAILED = "failed"  # 재스크래핑으로 출석 미반영 확정 — 억제 대상
+RESULT_ERROR = "error"  # 일시적 재생 오류(크래시/타임아웃 등) — 억제 카운트에서 제외
+
+# attempt_count를 올려 억제 판정에 반영하는 결과. 여기 없는 결과는 관측만 하고 카운트하지 않는다.
+# 브라우저 크래시·ErrAlreadyInView 같은 일시적 실패로 정상 강의가 억제되면 안 되기 때문이다.
+_SUPPRESSING_RESULTS = frozenset({RESULT_UNVERIFIED, RESULT_FAILED})
 
 _COLUMNS = (
     "course_id, lecture_url, course_name, lecture_title, week_label, "
@@ -45,9 +50,11 @@ def record_attempt(
 ) -> tuple[int, bool]:
     """재생 시도 결과를 원장에 기록한다.
 
-    result == "verified"면 행을 삭제해 이력을 초기화한다 (성공 = 이전 실패 무효).
-    그 외에는 attempt_count를 1 올리고, max_attempts에 도달하면 억제한다.
-    max_attempts <= 0이면 억제하지 않는다 (무제한 재시도).
+    RESULT_VERIFIED면 행을 삭제해 이력을 초기화한다 (성공 = 이전 실패 무효).
+    _SUPPRESSING_RESULTS(unverified/failed)면 attempt_count를 1 올리고,
+    max_attempts에 도달하면 억제한다. max_attempts <= 0이면 억제하지 않는다 (무제한 재시도).
+    RESULT_ERROR는 마지막 시도 정보만 갱신하고 attempt_count를 올리지 않는다 —
+    일시적 재생 오류로 정상 강의가 억제되는 것을 막기 위함이다.
 
     반환: (attempt_count, suppressed_now)
         suppressed_now는 **이번 호출에서 처음** 억제된 경우에만 True다.
@@ -70,8 +77,9 @@ def record_attempt(
             prev_count = row["attempt_count"] if row else 0
             was_suppressed = bool(row["suppressed"]) if row else False
 
-            count = prev_count + 1
-            suppress_now = max_attempts > 0 and count >= max_attempts
+            counts_toward_suppression = result in _SUPPRESSING_RESULTS
+            count = prev_count + 1 if counts_toward_suppression else prev_count
+            suppress_now = counts_toward_suppression and max_attempts > 0 and count >= max_attempts
             suppressed = 1 if (suppress_now or was_suppressed) else 0
             now = _now()
 

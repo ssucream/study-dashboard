@@ -51,6 +51,25 @@ def test_verified_clears_history():
     assert _fail(max_attempts=3) == (1, False)
 
 
+def test_transient_error_does_not_count_toward_suppression():
+    """일시적 재생 오류는 관측만 하고 억제 카운트를 올리지 않는다."""
+    for _ in range(5):
+        count, suppressed_now = playback_ledger.record_attempt(
+            "1",
+            "https://canvas.ssu.ac.kr/courses/1/items/1",
+            result=playback_ledger.RESULT_ERROR,
+            error="브라우저 크래시",
+            max_attempts=3,
+        )
+        assert (count, suppressed_now) == (0, False)
+    assert playback_ledger.is_suppressed("1", "https://canvas.ssu.ac.kr/courses/1/items/1") is False
+
+    # 마지막 시도 정보는 남아 있어야 한다 (관측 목적)
+    assert playback_ledger.suppressed_urls() == set()
+    _fail(max_attempts=3)  # 진짜 미반영은 정상적으로 1회차부터 카운트
+    assert _fail(max_attempts=3) == (2, False)
+
+
 def test_max_attempts_zero_never_suppresses():
     """0은 무제한 — 몇 번을 실패해도 억제하지 않는다 (롤백 스위치)."""
     for _ in range(10):
