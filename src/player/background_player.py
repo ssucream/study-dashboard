@@ -1609,7 +1609,7 @@ async def _play_lecture_inner(
                         var v = document.querySelector('{_VIDEO_SEL}');
                         if (!v) return;
                         var curTime = v.currentTime;
-                        var totalPage = typeof GetTotalPage !== 'undefined' ? GetTotalPage() : 14;
+                        var totalPage = typeof GetTotalPage !== 'undefined' ? GetTotalPage() : {_DEFAULT_TOTAL_PAGE};
                         var cumPage = Math.max(1, Math.ceil(curTime / v.duration * totalPage));
                         var ts = Date.now();
                         var cbName = 'jQuery111_' + ts;
