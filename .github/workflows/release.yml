@@ -119,41 +119,9 @@ jobs:
 
             ---
 
-            ## 사전 요구사항
-
-            - **Docker Desktop** ([다운로드](https://www.docker.com/products/docker-desktop/))
-              - Windows 사용자는 **WSL2** 활성화 필요 ([가이드](https://learn.microsoft.com/ko-kr/windows/wsl/install))
-            - **OpenSSL** — 로컬 HTTPS 인증서 생성용 (대부분 OS에 기본 설치됨)
-
-            ---
-
             ## 설치 및 실행
 
-            1. 아래 첨부된 `docker-compose.yml`을 빈 폴더에 다운로드
-
-            2. 로컬 HTTPS 인증서 생성 (최초 1회, 브라우저 접속용 자체 서명 인증서):
-               ```bash
-               mkdir -p certs
-               openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 825 \
-                 -keyout certs/local.key -out certs/local.crt \
-                 -subj "/CN=localhost" \
-                 -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-               ```
-
-            3. 이미지 pull 및 실행:
-               ```bash
-               docker compose pull
-               docker compose up -d
-               ```
-
-            4. 브라우저에서 https://localhost:3443 접속 (자체 서명 인증서 경고는 무시하고 진행) 후
-               학번/비밀번호로 로그인 → 설정 화면에서 다운로드/STT/AI 요약/텔레그램 알림 설정
-
-            > 설정값과 다운로드 파일은 실행 폴더의 `db/`, `downloads/`, `logs/`, `.secret_key`에 저장되어
-            > 컨테이너를 내렸다 올려도 보존됩니다. 학번/비밀번호는 DB에 저장하지 않고 세션 메모리에만 유지합니다.
-
-            소스를 직접 수정하며 개발하려면 저장소를 clone한 뒤 `docker-compose.yml`의 `image:` 줄을
-            주석 처리된 `build:` 섹션으로 바꿔서 사용하세요.
+            자세한 설치·실행 방법은 [README](https://github.com/ssucream/study-dashboard/blob/main/README-ko_kr.md#설치-및-실행)를 참고하세요.
 
             ---
 
