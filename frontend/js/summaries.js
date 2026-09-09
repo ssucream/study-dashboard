@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { state } from './state.js';
 import { $, esc } from './utils.js';
-import { openSummary } from './modals.js';
+import { openSummary, openTranscript } from './modals.js';
 
 // ═══════════════════════════════════════════════════════════════
 // 요약 대시보드
@@ -105,6 +105,12 @@ function renderSummaries() {
         items.forEach(item => {
           const row = document.createElement('div');
           row.className = 'flex items-center gap-3 px-6 py-3.5 hover:bg-slate-800/40 cursor-pointer transition-all';
+
+          const sttEnabled = !!item.transcript_available;
+          const sttBtn = sttEnabled
+            ? `<button data-stt class="shrink-0 px-2 py-0.5 bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 text-xs rounded-full font-medium transition-all">전체 STT</button>`
+            : `<span data-stt-disabled title="요약 시 원본 STT를 삭제해 열람할 수 없습니다" class="shrink-0 px-2 py-0.5 bg-slate-700/40 border border-slate-700 text-slate-600 text-xs rounded-full font-medium cursor-not-allowed">전체 STT</span>`;
+
           row.innerHTML = `
             <div class="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
               <i class="fa-solid fa-file-lines text-emerald-400 text-xs"></i>
@@ -113,10 +119,19 @@ function renderSummaries() {
               <p class="text-sm text-slate-200 truncate">${esc(item.title)}</p>
               <p class="text-xs text-slate-500 mt-0.5">${esc(item.week)}</p>
             </div>
+            ${sttBtn}
             <span class="shrink-0 px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs rounded-full font-medium">AI 요약</span>
             <i class="fa-solid fa-chevron-right text-slate-600 text-xs shrink-0"></i>
           `;
           row.addEventListener('click', () => openSummary(item.id, item.title, item.week));
+          if (sttEnabled) {
+            row.querySelector('[data-stt]').addEventListener('click', (e) => {
+              e.stopPropagation();
+              openTranscript(item.transcript_id, item.title, item.week, item.course);
+            });
+          } else {
+            row.querySelector('[data-stt-disabled]').addEventListener('click', (e) => e.stopPropagation());
+          }
           body.appendChild(row);
         });
       });

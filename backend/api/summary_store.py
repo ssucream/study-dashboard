@@ -79,6 +79,42 @@ def _pipeline_summary_path(course_name: str, week_label: str, lecture_title: str
     return (_pipeline_summary_dir() / rel.parent / f"{rel.stem}_summarized.txt").expanduser().resolve()
 
 
+def _transcript_dir() -> Path:
+    """다운로드 파이프라인이 STT 원문(txt)을 저장하는 디렉터리 (downloads/text)."""
+    return (Path(Config.get_download_dir()) / "text").expanduser().resolve()
+
+
+def _pipeline_transcript_path(course_name: str, week_label: str, lecture_title: str) -> Path:
+    """다운로드 파이프라인이 STT 원문을 쓰는 경로.
+
+    구조: downloads/text/{course}/{week}/{title}.txt (build_download_paths와 동일 규칙)
+    """
+    rel = make_filepath(course_name, week_label, lecture_title)  # {course}/{week}/{title}.mp4
+    return (_transcript_dir() / rel.parent / f"{rel.stem}.txt").expanduser().resolve()
+
+
+def _legacy_transcript_path(course_name: str, week_label: str, lecture_title: str) -> Path:
+    """파이프라인 재편 이전 CLI가 mp4 옆에 저장하던 STT 원문 경로."""
+    mp4_path = Path(Config.get_download_dir()) / make_filepath(course_name, week_label, lecture_title)
+    return mp4_path.with_suffix(".txt").expanduser().resolve()
+
+
+def find_transcript_path(course_name: str, week_label: str, lecture_title: str) -> Path | None:
+    """강의 정보에 해당하는 STT 원문(txt) 파일을 찾는다.
+
+    요약 시 원본 STT를 삭제한 경우(SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE) 파일이 없으므로
+    None을 반환한다 — 호출부는 이 경우 '전체 STT' 버튼을 비활성화한다.
+    """
+    candidates = [
+        _pipeline_transcript_path(course_name, week_label, lecture_title),
+        _legacy_transcript_path(course_name, week_label, lecture_title),
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and _is_allowed_summary_path(candidate):
+            return candidate
+    return None
+
+
 def _is_allowed_summary_path(path: Path) -> bool:
     if path.suffix.lower() not in _ALLOWED_SUMMARY_SUFFIXES:
         return False
@@ -140,6 +176,7 @@ def encode_summary_id(path: Path) -> str:
 
 
 def _summary_item(path: Path, term: str, course: str, week: str, title: str) -> dict[str, Any]:
+    transcript_path = find_transcript_path(course, week, title)
     return {
         "id": _encode_summary_id(path),
         "term": term,
@@ -147,6 +184,8 @@ def _summary_item(path: Path, term: str, course: str, week: str, title: str) -> 
         "week": week,
         "title": title,
         "format": "markdown" if path.suffix.lower() == ".md" else "text",
+        "transcript_available": transcript_path is not None,
+        "transcript_id": _encode_summary_id(transcript_path) if transcript_path else None,
     }
 
 
@@ -206,3 +245,25 @@ def read_summary(summary_id: str) -> dict[str, Any]:
         "content": content,
         "format": "markdown" if path.suffix.lower() == ".md" else "text",
     }
+
+
+def read_transcript(transcript_id: str) -> dict[str, Any]:
+    """STT 원문 ID로 파일 내용을 읽는다."""
+    path = _decode_summary_id(transcript_id)
+    if path.suffix.lower() != ".txt" or not path.is_file():
+        raise FileNotFoundError("STT 원문 파일을 찾을 수 없습니다.")
+
+    return {
+        "id": transcript_id,
+        "title": path.stem,
+        "content": path.read_text(encoding="utf-8"),
+        "format": "text",
+    }
+
+
+def transcript_path_from_id(transcript_id: str) -> Path:
+    """STT 원문 ID를 검증된 파일 경로로 되돌린다 (다운로드용)."""
+    path = _decode_summary_id(transcript_id)
+    if path.suffix.lower() != ".txt" or not path.is_file():
+        raise FileNotFoundError("STT 원문 파일을 찾을 수 없습니다.")
+    return path

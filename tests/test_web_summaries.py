@@ -184,6 +184,65 @@ async def test_summaries_list_includes_pipeline_generated_summary(monkeypatch, t
     assert detail["content"] == "1강 요약 본문"
 
 
+def _write_pipeline_transcript(monkeypatch, tmp_path, course, lecture, text="1강 STT 원문 본문"):
+    """다운로드 파이프라인이 쓰는 위치(downloads/text/...)에 STT 원문을 생성한다."""
+    from src.config import Config
+
+    monkeypatch.setattr(Config, "get_download_dir", classmethod(lambda cls: str(tmp_path)))
+    path = summary_store._pipeline_transcript_path(course.long_name, lecture.week_label, lecture.title)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.mark.asyncio
+async def test_summaries_list_exposes_transcript_when_stt_kept(monkeypatch, tmp_path):
+    """요약 시 원본 STT를 보존한 경우 목록 항목에 transcript_id가 노출돼야 한다."""
+    course, lecture = _seed_course()
+    _write_pipeline_summary(monkeypatch, tmp_path, course, lecture)
+    _write_pipeline_transcript(monkeypatch, tmp_path, course, lecture)
+
+    payload = await summaries_route.get_summaries_list()
+    item = payload["summaries"][0]
+
+    assert item["transcript_available"] is True
+    assert item["transcript_id"]
+
+    detail = await summaries_route.get_transcript(item["transcript_id"])
+    assert detail["content"] == "1강 STT 원문 본문"
+    assert detail["format"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_summaries_list_marks_transcript_unavailable_when_deleted(monkeypatch, tmp_path):
+    """요약 시 원본 STT를 삭제한 경우 transcript_available=False 여야 한다."""
+    course, lecture = _seed_course()
+    _write_pipeline_summary(monkeypatch, tmp_path, course, lecture)
+
+    payload = await summaries_route.get_summaries_list()
+    item = payload["summaries"][0]
+
+    assert item["transcript_available"] is False
+    assert item["transcript_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_transcript_rejects_non_txt_id(monkeypatch, tmp_path):
+    """요약(.md) ID로 STT 원문 조회를 시도하면 404."""
+    monkeypatch.setattr(summary_store, "summaries_dir", lambda: tmp_path / "summaries")
+    course, lecture = _seed_course()
+    summary_path = summary_store._canonical_summary_path(
+        course.term, course.long_name, lecture.week_label, lecture.title
+    )
+    summary_path.parent.mkdir(parents=True)
+    summary_path.write_text("# 요약", encoding="utf-8")
+    summary = summary_store.summary_for_lecture(course.term, course.long_name, lecture.week_label, lecture.title)
+
+    with pytest.raises(Exception) as exc:
+        await summaries_route.get_transcript(summary["id"])
+    assert getattr(exc.value, "status_code", None) == 404
+
+
 @pytest.mark.asyncio
 async def test_summaries_list_prefers_canonical_over_pipeline_duplicate(monkeypatch, tmp_path):
     course, lecture = _seed_course()
