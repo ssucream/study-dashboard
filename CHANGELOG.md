@@ -2,6 +2,32 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.11.0] - 2026-09-09
+
+### Added
+
+- **학습 결과 화면에 "전체 STT" 열람 버튼**: 각 주차 항목에 `AI 요약`과 별도로 STT 원문(txt)을
+  바로 볼 수 있는 버튼을 추가했다. 요약 시 원본 STT를 삭제한 경우
+  (`SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE=true`) 파일이 없으므로 버튼이 비활성 상태로
+  표시되고 클릭되지 않는다. STT 원문은 `downloads/text/{과목}/{주차}/{강의}.txt`
+  (구버전 CLI는 mp4 옆)에서 탐색하며, 목록 API가 `transcript_available`·`transcript_id`를
+  함께 내려준다. 조회/다운로드 엔드포인트 `GET /api/summaries/transcript/{id}`,
+  `GET /api/summaries/transcript/{id}/download` 추가 — `.txt`가 아니거나 파일이 없으면 404
+  (`backend/api/summary_store.py`, `backend/api/routes/summaries.py`,
+  `frontend/js/summaries.js`, `frontend/js/modals.js`)
+- **AI 요약 팝업에 "복사" 버튼**: 요약 전문(원본 마크다운)을 클립보드로 복사한다.
+  `navigator.clipboard` 우선, 실패 시 임시 `textarea` 폴백. 복사 성공/실패를 아이콘·라벨로
+  2초간 피드백 (`frontend/index.html`, `frontend/js/modals.js`)
+
+### Fixed
+
+- **요약 "주요 내용 정리" 번호가 전부 `1.`로 표시되던 문제**: 마크다운 렌더러가 빈 줄이나
+  들여쓴 하위 항목(`   - 소주제`)을 만날 때마다 `<ol>`을 닫아, 번호 항목마다 1개짜리
+  리스트가 생성되고 브라우저가 모두 `1.`로 렌더링했다. 요약 프롬프트의 형식 예시 자체가
+  항목 사이에 하위 불릿·빈 줄을 넣도록 유도해 항상 재현됐다. 렌더러를 들여쓰기별 리스트
+  스택 기반으로 재작성해 빈 줄로는 리스트를 닫지 않고, 들여쓴 항목은 중첩 리스트로
+  처리하며, 리스트가 아닌 문단·제목이 올 때만 리스트를 닫도록 했다 (`frontend/js/markdown.js`)
+
 ## [v26.10.5] - 2026-09-08
 
 ### Fixed
