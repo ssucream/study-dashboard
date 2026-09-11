@@ -175,9 +175,9 @@ def test_interrupted_expires_after_cooldown_window():
     assert playback_ledger.interrupted_recently() == {url}
 
     # 쿨다운(5분)보다 오래 전 시각으로 되돌려 만료를 시뮬레이션한다.
-    stale = (datetime.now(playback_ledger.KST) - timedelta(seconds=playback_ledger._INTERRUPT_COOLDOWN_SECONDS + 60)).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    stale = (
+        datetime.now(playback_ledger.KST) - timedelta(seconds=playback_ledger._INTERRUPT_COOLDOWN_SECONDS + 60)
+    ).strftime("%Y-%m-%d %H:%M:%S")
     with db._connect() as conn:
         conn.execute(
             "UPDATE playback_attempts SET last_attempt_at = ? WHERE course_id = ? AND lecture_url = ?",
