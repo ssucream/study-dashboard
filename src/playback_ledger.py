@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from src import db
@@ -21,10 +21,20 @@ RESULT_VERIFIED = "verified"  # 출석 확인 — 행 삭제(이력 초기화)
 RESULT_UNVERIFIED = "unverified"  # 검증 불가 — 상시화되면 결국 억제
 RESULT_FAILED = "failed"  # 재스크래핑으로 출석 미반영 확정 — 억제 대상
 RESULT_ERROR = "error"  # 일시적 재생 오류(크래시/타임아웃 등) — 억제 카운트에서 제외
+# 자동 모드 사이클이 재생 도중 취소됨(로그아웃/작업 취소/백엔드 재시작 등) — 억제 카운트에서
+# 제외하되, interrupted_recently()의 쿨다운 동안만 pending에서 제외한다.
+RESULT_INTERRUPTED = "interrupted"
 
 # attempt_count를 올려 억제 판정에 반영하는 결과. 여기 없는 결과는 관측만 하고 카운트하지 않는다.
 # 브라우저 크래시·ErrAlreadyInView 같은 일시적 실패로 정상 강의가 억제되면 안 되기 때문이다.
 _SUPPRESSING_RESULTS = frozenset({RESULT_UNVERIFIED, RESULT_FAILED})
+
+# RESULT_INTERRUPTED 기록 후 같은 강의를 자동 모드 pending에서 제외하는 시간(초).
+# logout()은 실행 중이던 자동 재생을 취소해도 AUTO_ENABLED 지속 상태를 끄지 않으므로,
+# 재로그인 시 resume_persisted_auto()가 즉시 같은 강의를 다시 시도한다. 로그인/로그아웃이
+# 짧은 시간 안에 반복되면 완주하지 못한 같은 강의만 계속 재시도하는 것처럼 보이는 문제를
+# 이 쿨다운으로 막는다 (억제 원장과 달리 실패로 카운트하지 않고 시간이 지나면 자동 해제됨).
+_INTERRUPT_COOLDOWN_SECONDS = 300
 
 _COLUMNS = (
     "course_id, lecture_url, course_name, lecture_title, week_label, "
@@ -140,6 +150,30 @@ def suppressed_urls(course_id: str | None = None) -> set[str]:
                 ).fetchall()
             else:
                 rows = conn.execute("SELECT lecture_url FROM playback_attempts WHERE suppressed = 1").fetchall()
+            return {row["lecture_url"] for row in rows}
+    except Exception:
+        return set()
+
+
+def interrupted_recently(course_id: str | None = None) -> set[str]:
+    """쿨다운 시간 내에 재생 도중 취소된(RESULT_INTERRUPTED) 강의 URL 집합.
+
+    자동 모드 사이클 시작 시 1회 조회해 suppressed_urls()와 함께 pending에서 제외한다.
+    """
+    cutoff = (datetime.now(KST) - timedelta(seconds=_INTERRUPT_COOLDOWN_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with db._connect() as conn:
+            if course_id:
+                rows = conn.execute(
+                    "SELECT lecture_url FROM playback_attempts "
+                    "WHERE last_result = ? AND last_attempt_at >= ? AND course_id = ?",
+                    (RESULT_INTERRUPTED, cutoff, course_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT lecture_url FROM playback_attempts WHERE last_result = ? AND last_attempt_at >= ?",
+                    (RESULT_INTERRUPTED, cutoff),
+                ).fetchall()
             return {row["lecture_url"] for row in rows}
     except Exception:
         return set()

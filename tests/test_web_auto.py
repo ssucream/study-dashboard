@@ -461,6 +461,115 @@ async def test_auto_cycle_transient_error_not_counted_as_attendance_failure(monk
 
 
 @pytest.mark.asyncio
+async def test_auto_cycle_records_interrupted_on_cancellation(monkeypatch):
+    """재생 도중 취소되면(로그아웃 등) RESULT_INTERRUPTED로 기록하고 억제하지는 않는다."""
+    from src import playback_ledger
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    lecture = _make_lecture("1주차 Intro")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[lecture])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    with pytest.raises(asyncio.CancelledError):
+        await auto_route._run_auto_cycle()
+
+    # 억제 카운트에는 들어가지 않지만, 쿨다운 동안 pending에서 제외될 수 있도록 기록된다.
+    assert playback_ledger.is_suppressed(course.id, lecture.full_url) is False
+    assert lecture.full_url in playback_ledger.interrupted_recently(course.id)
+    actions = [e["action"] for e in event_log.list_events(event_type="player", limit=10)]
+    assert "play_interrupted" in actions
+    assert "attendance_not_recorded" not in actions
+    assert "playback_suppressed" not in actions
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_skips_recently_interrupted_lectures(monkeypatch):
+    """쿨다운 중인(재생 도중 취소된) 강의는 다음 사이클 pending에서 제외된다."""
+    from src import playback_ledger
+
+    course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")
+    interrupted_lec = _make_lecture("중단된강의")
+    normal_lec = _make_lecture("정상강의")
+    detail = CourseDetail(
+        course=course,
+        course_name=course.long_name,
+        professors="교수",
+        weeks=[Week(title="1주차", week_number=1, lectures=[interrupted_lec, normal_lec])],
+    )
+
+    class _Scraper(_PageFactoryMixin):
+        _page = object()
+
+        async def close(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def fetch_courses(self):
+            return [course]
+
+        async def fetch_all_details(self, courses):
+            return [detail]
+
+    app_state.scraper = _Scraper()
+    app_state.courses = [course]
+    app_state.details = [detail]
+    app_state.auto.enabled = True
+
+    playback_ledger.record_attempt(course.id, interrupted_lec.full_url, result=playback_ledger.RESULT_INTERRUPTED)
+    assert playback_ledger.is_suppressed(course.id, interrupted_lec.full_url) is False
+    assert interrupted_lec.full_url in playback_ledger.interrupted_recently(course.id)
+
+    from src.player.background_player import PlaybackState
+
+    played = []
+
+    async def fake_play(page, url, on_progress=None, debug=False, log_fn=None, **kw):
+        played.append(url)
+        return PlaybackState(current=10, duration=10, ended=True, verified=True)
+
+    monkeypatch.setattr("src.player.background_player.play_lecture", fake_play)
+    monkeypatch.setattr(auto_route, "_run_post_play_pipeline", lambda *a, **kw: _noop())
+    monkeypatch.setattr("backend.api.routes.player._write_playback_log", lambda *a: None)
+
+    await auto_route._run_auto_cycle()
+
+    assert played == [normal_lec.full_url]
+
+
+@pytest.mark.asyncio
 async def test_auto_cycle_skips_suppressed_lectures(monkeypatch):
     """억제 원장에 등록된 강의는 pending에 포함되지 않는다."""
     from src import playback_ledger

@@ -66,6 +66,11 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   잔여 상태가 누적돼 사이클당 첫 강의만 출석 처리되던 버그가 재발한다.
 - **재시도 억제**: `src/playback_ledger.py` — 출석 미반영이 `AUTO_MAX_RETRY_PER_LECTURE`회
   반복되면 자동 모드 pending에서 제외하고 텔레그램으로 1회 알린다. 웹 UI에서 해제 가능.
+  `logout()`은 실행 중이던 자동 재생 task는 취소하지만 `AUTO_ENABLED` 지속 상태는 끄지 않으므로,
+  재로그인 시 `resume_persisted_auto()`가 즉시 같은 강의를 다시 시도할 수 있다. 재생 도중
+  취소(`asyncio.CancelledError`)되면 `RESULT_INTERRUPTED`를 기록해 억제 카운트에는 넣지 않되
+  `_INTERRUPT_COOLDOWN_SECONDS`(5분) 동안 pending에서 제외한다 — 로그인/로그아웃이 짧은 시간
+  안에 반복돼도 완주하지 못한 같은 강의만 계속 재시도하는 것처럼 보이는 문제를 막기 위함.
 - **자동 모드**: `backend/api/routes/auto.py` — 미완료 강의 일괄 재생 + 스케줄 실행.
 - **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
 - **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
@@ -172,7 +177,7 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
     lecture_title   TEXT NOT NULL DEFAULT '',
     week_label      TEXT NOT NULL DEFAULT '',
     attempt_count   INTEGER NOT NULL DEFAULT 0,
-    last_result     TEXT NOT NULL DEFAULT '',   -- verified | unverified | failed
+    last_result     TEXT NOT NULL DEFAULT '',   -- verified | unverified | failed | error | interrupted
     last_error      TEXT,
     last_attempt_at TEXT NOT NULL,
     suppressed      INTEGER NOT NULL DEFAULT 0, -- 1이면 자동모드 pending에서 제외

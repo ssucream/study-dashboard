@@ -125,6 +125,41 @@ def _log_playback_error(course, lec, state) -> None:
         )
 
 
+def _log_playback_interrupted(course, lec) -> None:
+    """자동 모드 사이클이 재생 도중 취소됐을 때(로그아웃/작업 취소/백엔드 재시작 등) 기록한다.
+
+    출석 미반영/오류와 달리 억제 카운트에는 넣지 않는다 — 대신 쿨다운 시간 동안만
+    pending에서 제외해(`playback_ledger.interrupted_recently`), 짧은 시간 안에 로그인/
+    로그아웃이 반복돼도 같은 강의를 즉시 다시 시도하지 않도록 한다.
+    """
+    from src import event_log, playback_ledger
+
+    logger.info("재생 중단: %s / %s — 자동 모드 사이클이 취소됨 (로그아웃/작업 취소 등)", course.long_name, lec.title)
+    with suppress(Exception):
+        playback_ledger.record_attempt(
+            course.id,
+            lec.full_url,
+            course_name=course.long_name,
+            lecture_title=lec.title,
+            week_label=lec.week_label,
+            result=playback_ledger.RESULT_INTERRUPTED,
+        )
+    with suppress(Exception):
+        event_log.record_event(
+            event_type="player",
+            action="play_interrupted",
+            status="cancelled",
+            actor_user_id=app_state.user_id or None,
+            target_type="lecture",
+            course_id=course.id,
+            course_name=course.long_name,
+            lecture_title=lec.title,
+            lecture_url=lec.full_url,
+            week_label=lec.week_label,
+            message="자동 모드 사이클이 재생 도중 취소됐습니다 (로그아웃/작업 취소 등).",
+        )
+
+
 async def _record_ledger_attempt(course, lec, result: str, error: str | None = None) -> None:
     """재생 결과를 억제 원장에 기록하고, 이번 호출에서 억제되면 1회 알린다."""
     from src import event_log, playback_ledger
@@ -368,12 +403,13 @@ async def _run_auto_cycle() -> None:
     from src import playback_ledger
 
     suppressed = playback_ledger.suppressed_urls()
+    cooling_down = playback_ledger.interrupted_recently()
     pending: list[tuple] = []
     for course, detail in zip(courses, details, strict=False):
         if detail is None:
             continue
         for lec in detail.all_video_lectures:
-            if lec.needs_watch and lec.full_url not in suppressed:
+            if lec.needs_watch and lec.full_url not in suppressed and lec.full_url not in cooling_down:
                 pending.append((course, lec))
 
     if not pending:
@@ -512,6 +548,7 @@ async def _run_auto_cycle() -> None:
         except asyncio.CancelledError:
             app_state.playback.status = "stopped"
             app_state.is_playing = False
+            _log_playback_interrupted(course, lec)
             raise
         except Exception as e:
             app_state.playback.status = "error"

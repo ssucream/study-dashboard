@@ -149,6 +149,54 @@ def test_suppressed_count_matches_list():
     assert playback_ledger.suppressed_count() == len(playback_ledger.list_suppressed())
 
 
+def test_interrupted_result_does_not_suppress_but_is_in_cooldown():
+    """RESULT_INTERRUPTED는 억제 카운트에 안 들어가지만 쿨다운 조회 대상에는 포함된다."""
+    url = "https://canvas.ssu.ac.kr/courses/1/items/1"
+    for _ in range(5):
+        count, suppressed_now = playback_ledger.record_attempt(
+            "1", url, result=playback_ledger.RESULT_INTERRUPTED, max_attempts=1
+        )
+        assert (count, suppressed_now) == (0, False)
+
+    assert playback_ledger.is_suppressed("1", url) is False
+    assert playback_ledger.interrupted_recently() == {url}
+    assert playback_ledger.interrupted_recently(course_id="1") == {url}
+    assert playback_ledger.interrupted_recently(course_id="2") == set()
+
+
+def test_interrupted_expires_after_cooldown_window():
+    """쿨다운 시간이 지난 interrupted 기록은 더 이상 반환되지 않는다."""
+    from datetime import datetime, timedelta
+
+    from src import db
+
+    url = "https://canvas.ssu.ac.kr/courses/1/items/1"
+    playback_ledger.record_attempt("1", url, result=playback_ledger.RESULT_INTERRUPTED)
+    assert playback_ledger.interrupted_recently() == {url}
+
+    # 쿨다운(5분)보다 오래 전 시각으로 되돌려 만료를 시뮬레이션한다.
+    stale = (datetime.now(playback_ledger.KST) - timedelta(seconds=playback_ledger._INTERRUPT_COOLDOWN_SECONDS + 60)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    with db._connect() as conn:
+        conn.execute(
+            "UPDATE playback_attempts SET last_attempt_at = ? WHERE course_id = ? AND lecture_url = ?",
+            (stale, "1", url),
+        )
+
+    assert playback_ledger.interrupted_recently() == set()
+
+
+def test_verified_clears_interrupted_state():
+    """중단 기록 후 실제로 성공하면 이력이 지워져 쿨다운도 함께 해제된다."""
+    url = "https://canvas.ssu.ac.kr/courses/1/items/1"
+    playback_ledger.record_attempt("1", url, result=playback_ledger.RESULT_INTERRUPTED)
+    assert playback_ledger.interrupted_recently() == {url}
+
+    playback_ledger.record_attempt("1", url, result=playback_ledger.RESULT_VERIFIED)
+    assert playback_ledger.interrupted_recently() == set()
+
+
 def test_get_auto_max_retry_normalizes():
     from src.config import Config
 
