@@ -106,6 +106,12 @@ async def login(req: LoginRequest):
 
     Config.set_session_credentials(req.user_id, req.password)
 
+    # 세션 쿠키를 암호화해 저장 — 백엔드 재시작 시 이 자격증명 없이도 자동 모드가
+    # 무인 재개될 수 있게 한다 (main.py lifespan 참고).
+    with suppress(Exception):
+        storage_state = await scraper.export_storage_state()
+        Config.save_session_state(req.user_id, storage_state)
+
     event_log.record_event(
         event_type="auth",
         action="login",
@@ -169,6 +175,11 @@ async def logout():
     from src.config import Config
 
     Config.clear_session_credentials()
+    # 명시적 로그아웃은 저장된 세션 쿠키도 함께 지운다 — 백엔드 재시작만으로는
+    # (로그아웃 없이 죽었다 살아난 경우) 무인 재개가 가능해야 하지만, 사용자가
+    # 직접 로그아웃했다면 다음 재개는 반드시 수동 로그인을 거치게 한다.
+    with suppress(Exception):
+        Config.clear_session_state()
     # 로그아웃은 자동 모드 지속 상태를 끄지 않는다.
     # 한 번 켠 자동 모드는 '자동 모드 중지'를 누르기 전까지 유지되며,
     # 로그아웃/백엔드 재시작 후 재로그인 시 자동으로 재개된다. (학번/비밀번호는

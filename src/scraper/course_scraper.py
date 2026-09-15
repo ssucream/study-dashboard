@@ -83,7 +83,7 @@ class CourseScraper:
         self._login_lock = asyncio.Lock()
         self._session_restored = False  # 병렬 재로그인 중복 방지 플래그
 
-    async def _setup_browser(self):
+    async def _setup_browser(self, storage_state: dict | None = None):
         _args = [
             "--disable-blink-features=AutomationControlled",
             "--enable-proprietary-codecs",
@@ -123,6 +123,7 @@ class CourseScraper:
             ),
             permissions=["camera", "microphone", "geolocation"],
             viewport={"width": 1280, "height": 720},
+            storage_state=storage_state,
         )
         await context.add_init_script("""
             // webdriver 속성 제거
@@ -158,17 +159,32 @@ class CourseScraper:
         self._context = context
         return page, browser
 
-    async def start(self):
+    async def start(self, storage_state: dict | None = None):
+        """브라우저를 시작하고 로그인한다.
+
+        storage_state가 주어지면 (백엔드 재시작 후 저장된 세션 쿠키로 무인 재개)
+        해당 쿠키로 컨텍스트를 만들고 로그인을 건너뛴다. 쿠키가 이미 만료됐고
+        username/password도 없으면(순수 쿠키 재개 시도) 재로그인할 수 없으므로
+        예외를 던져 호출자가 "세션 만료 → 수동 로그인 필요"로 처리하게 한다.
+        """
         self._pw = await async_playwright().start()
-        self._page, self._browser = await self._setup_browser()
+        self._page, self._browser = await self._setup_browser(storage_state=storage_state)
         self._log("LMS 접속 중...")
         await self._page.goto(_DASHBOARD_URL, wait_until="domcontentloaded")
         if await _needs_login(self._page):
+            if not self.username or not self.password:
+                raise RuntimeError("저장된 세션이 만료되었습니다. 다시 로그인해주세요.")
             self._log("로그인 진행 중...")
             ok = await ensure_logged_in(self._page, self.username, self.password)
             if not ok:
                 raise RuntimeError("로그인 실패. 학번/비밀번호를 확인하세요.")
             self._log("로그인 완료")
+
+    async def export_storage_state(self) -> dict:
+        """현재 세션 쿠키를 반환한다 (백엔드 재시작 후 무인 재개를 위해 암호화 저장할 원본)."""
+        if self._context is None:
+            raise RuntimeError("브라우저가 시작되지 않았습니다.")
+        return await self._context.storage_state()
 
     async def close(self):
         if self._browser:

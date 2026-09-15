@@ -1,8 +1,9 @@
+import json
 from datetime import timedelta, timezone
 from pathlib import Path
 
 from src import db
-from src.crypto import decrypt, is_encrypted
+from src.crypto import decrypt, encrypt, is_encrypted
 
 # ── 공용 상수 ─────────────────────────────────────────────────
 KST = timezone(timedelta(hours=9))
@@ -309,3 +310,34 @@ class Config:
         """메모리에 보관 중인 LMS 계정 정보를 지운다."""
         cls.LMS_USER_ID = ""
         cls.LMS_PASSWORD = ""
+
+    @classmethod
+    def save_session_state(cls, user_id: str, storage_state: dict) -> None:
+        """로그인 세션 쿠키(Playwright storage_state)를 암호화해 DB에 저장한다.
+
+        비밀번호는 저장하지 않지만, 탈취 시 로그인 없이 세션을 하이재킹할 수 있는
+        민감 정보이므로 반드시 암호화한다. 백엔드가 재시작돼도 자동 모드가
+        수동 로그인 없이 재개될 수 있도록 하는 용도로만 쓰인다.
+        """
+        payload = json.dumps({"user_id": user_id, "storage_state": storage_state})
+        db.set("LMS_SESSION_STATE", encrypt(payload))
+
+    @classmethod
+    def load_session_state(cls) -> tuple[str, dict] | None:
+        """저장된 세션 쿠키를 복호화해 (user_id, storage_state)로 반환한다. 없거나 손상됐으면 None."""
+        raw = db.get("LMS_SESSION_STATE")
+        if not raw or not is_encrypted(raw):
+            return None
+        decrypted = decrypt(raw)
+        if not decrypted:
+            return None
+        try:
+            data = json.loads(decrypted)
+            return data.get("user_id", ""), data.get("storage_state") or {}
+        except (ValueError, TypeError):
+            return None
+
+    @classmethod
+    def clear_session_state(cls) -> None:
+        """저장된 세션 쿠키를 DB에서 지운다 (명시적 로그아웃 시 호출)."""
+        db.set("LMS_SESSION_STATE", "")

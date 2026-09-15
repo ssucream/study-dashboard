@@ -150,6 +150,12 @@ def notify_auto_error(
     return _send_message(bot_token, chat_id, text)
 
 
+def notify_session_resume_failed(bot_token: str, chat_id: str) -> bool:
+    """백엔드 재시작 시 저장된 세션 쿠키로 자동 모드 재개를 시도했으나 실패했음을 알린다."""
+    text = "[자동 모드] 저장된 로그인 세션이 만료되어 자동 재개에 실패했습니다.\n웹 대시보드에서 다시 로그인해주세요."
+    return _send_message(bot_token, chat_id, text)
+
+
 def notify_playback_suppressed(
     bot_token: str,
     chat_id: str,

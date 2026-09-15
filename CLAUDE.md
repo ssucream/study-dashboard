@@ -72,6 +72,16 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   `_INTERRUPT_COOLDOWN_SECONDS`(5분) 동안 pending에서 제외한다 — 로그인/로그아웃이 짧은 시간
   안에 반복돼도 완주하지 못한 같은 강의만 계속 재시도하는 것처럼 보이는 문제를 막기 위함.
 - **자동 모드**: `backend/api/routes/auto.py` — 미완료 강의 일괄 재생 + 스케줄 실행.
+  자동 루프는 `app_state.scraper`(로그인으로 생성되는 프로세스 메모리 싱글턴)에 의존하므로,
+  백엔드가 재시작되면(재배포·크래시·호스트 재부팅) 이 루프도 함께 사라진다. 학번/비밀번호는
+  DB에 저장하지 않으므로 자격증명으로 자동 로그인해 되살릴 수는 없다 — 대신 로그인 성공 시
+  Playwright 세션 쿠키(storage_state)를 암호화해 저장해두고(`Config.save_session_state`),
+  `backend/main.py`의 `_resume_auto_from_saved_session()`이 부팅 시 그 쿠키로 로그인 없이
+  세션을 복원해본다. 쿠키가 이미 만료됐으면 조용히 포기하고 텔레그램으로만 알린 뒤 기존처럼
+  수동 로그인을 기다린다. 자동 루프가 주기적으로 브라우저를 재시작할 때마다
+  `_snapshot_session()`으로 쿠키를 다시 저장해 최신 상태를 유지하고, 명시적 로그아웃 시에는
+  `Config.clear_session_state()`로 저장된 쿠키까지 지워 다음 재개는 반드시 수동 로그인을
+  거치게 한다. 쿠키 탈취 시 비밀번호 없이도 세션을 하이재킹할 수 있다는 트레이드오프가 있다.
 - **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
 - **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
 - **예상 문제**: `src/quiz/` — 요약본·STT·업로드 강의자료(PDF/PPTX/DOCX)로 예상 문제 생성·채점. AI 호출은 `summarizer.generate_text()` 재사용. 객관식은 로컬 채점, 주관식은 채점기준+답안을 LLM 1회 호출. 문제셋/문항/풀이 이력은 SQLite(`quiz_sets`/`quiz_questions`/`quiz_attempts`).
@@ -197,7 +207,8 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 ```
 
 민감 키 목록 (저장 시 반드시 `encrypt()` 적용):
-`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`
+`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`, `LMS_SESSION_STATE`
+(로그인 세션 쿠키 — 자동 모드 무인 재개용. 학번/비밀번호 자체는 여전히 저장하지 않는다)
 
 ## 설정 항목
 
@@ -270,4 +281,4 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 - `db/` — 설정 DB(`app.db`). **절대 커밋 금지** (`db/.gitkeep`만 추적)
 - `downloads/` — 다운로드/변환/요약 산출물. **절대 커밋 금지** (`downloads/.gitkeep`만 추적)
 
-**민감 정보 처리**: 학번/비밀번호는 자동 로그인을 방지하기 위해 DB에 저장하지 않고 현재 프로세스 메모리에만 유지한다. API 키와 텔레그램 토큰은 `crypto.py`로 암호화되어 DB에 저장되며 평문으로 저장되지 않는다.
+**민감 정보 처리**: 학번/비밀번호는 자동 로그인을 방지하기 위해 DB에 저장하지 않고 현재 프로세스 메모리에만 유지한다. API 키와 텔레그램 토큰은 `crypto.py`로 암호화되어 DB에 저장되며 평문으로 저장되지 않는다. 단, 로그인 세션 쿠키(`LMS_SESSION_STATE`)는 백엔드 재시작 후에도 자동 모드가 무인으로 재개될 수 있도록 암호화해 저장한다 — 비밀번호 자체는 아니지만, 탈취 시 재로그인 없이 세션을 하이재킹할 수 있는 새로운 보안 트레이드오프이므로 유출 시 즉시 로그아웃(쿠키 폐기)하고 재로그인해야 한다.

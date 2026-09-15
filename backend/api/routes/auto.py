@@ -38,6 +38,21 @@ def _next_schedule_time(schedule_hours: list[int]) -> datetime:
     return tomorrow.replace(hour=sorted(schedule_hours)[0], minute=0, second=0, microsecond=0)
 
 
+async def _snapshot_session() -> None:
+    """현재 세션 쿠키를 재저장한다.
+
+    브라우저를 재시작할 때마다 SSO 세션 쿠키가 갱신되므로, 저장해둔 쿠키가 낡아
+    백엔드 재시작 시 무인 재개(main.py lifespan)가 실패하지 않도록 매번 최신화한다.
+    """
+    if not app_state.scraper or not app_state.user_id:
+        return
+    from src.config import Config
+
+    with suppress(Exception):
+        storage_state = await app_state.scraper.export_storage_state()
+        Config.save_session_state(app_state.user_id, storage_state)
+
+
 def _make_verify_fn(course, lec):
     """재생 후 LMS 목록 재스크래핑으로 (completion, attendance)를 읽는 콜백을 만든다.
 
@@ -429,6 +444,7 @@ async def _run_auto_cycle() -> None:
                 async with scraper_lock:
                     await app_state.scraper.close()
                     await app_state.scraper.start()
+                await _snapshot_session()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -608,6 +624,7 @@ async def _auto_loop() -> None:
                     async with scraper_lock:
                         await app_state.scraper.close()
                         await app_state.scraper.start()
+                    await _snapshot_session()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

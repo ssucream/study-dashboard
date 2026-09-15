@@ -227,6 +227,9 @@ class _FakeScraper:
     async def close(self):
         self.closed = True
 
+    async def export_storage_state(self):
+        return {"cookies": [{"name": "sid", "value": self.username}]}
+
 
 @pytest.mark.asyncio
 async def test_login_resumes_persisted_auto_mode(monkeypatch):
@@ -311,3 +314,33 @@ async def test_relogin_after_logout_resumes_auto_mode(monkeypatch):
     await auth_route.login(auth_route.LoginRequest(user_id="s", password="p"))
 
     assert launched == [[9, 13]]
+
+
+@pytest.mark.asyncio
+async def test_login_saves_encrypted_session_state(monkeypatch, tmp_path):
+    """로그인 성공 시 백엔드 재시작 후 무인 재개용 세션 쿠키를 암호화해 저장한다."""
+    from src.config import Config
+
+    monkeypatch.setattr("src.scraper.course_scraper.CourseScraper", _FakeScraper)
+
+    with _make_db(tmp_path), patch("src.crypto._KEY_PATH", tmp_path / ".secret_key"):
+        await auth_route.login(auth_route.LoginRequest(user_id="student123", password="secret"))
+        saved = Config.load_session_state()
+
+    assert saved == ("student123", {"cookies": [{"name": "sid", "value": "student123"}]})
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_saved_session_state(monkeypatch, tmp_path):
+    """명시적 로그아웃은 저장된 세션 쿠키도 함께 지워, 다음 재개는 반드시 수동 로그인을 거치게 한다."""
+    from src.config import Config
+
+    monkeypatch.setattr("src.scraper.course_scraper.CourseScraper", _FakeScraper)
+
+    with _make_db(tmp_path), patch("src.crypto._KEY_PATH", tmp_path / ".secret_key"):
+        await auth_route.login(auth_route.LoginRequest(user_id="student123", password="secret"))
+        assert Config.load_session_state() is not None
+
+        await auth_route.logout()
+
+        assert Config.load_session_state() is None

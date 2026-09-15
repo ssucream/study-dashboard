@@ -244,3 +244,67 @@ def test_db_init_idempotent(tmp_path):
         db.init()
         db.init()
         db.init()
+
+
+# ── 세션 쿠키 저장/복원 (백엔드 재시작 시 자동 모드 무인 재개용) ──────────────
+
+
+def test_save_and_load_session_state_roundtrip(tmp_path):
+    """저장한 세션 쿠키를 그대로 복원할 수 있어야 한다."""
+    from unittest.mock import patch
+
+    from src.config import Config
+
+    with _make_db(tmp_path), patch("src.crypto._KEY_PATH", tmp_path / ".secret_key"):
+        Config.save_session_state("student123", {"cookies": [{"name": "session", "value": "abc"}]})
+        result = Config.load_session_state()
+
+    assert result == ("student123", {"cookies": [{"name": "session", "value": "abc"}]})
+
+
+def test_save_session_state_is_encrypted_at_rest(tmp_path):
+    """DB에는 평문 쿠키가 아니라 암호화된 값만 저장돼야 한다."""
+    from unittest.mock import patch
+
+    import src.db as db
+    from src.config import Config
+
+    with _make_db(tmp_path), patch("src.crypto._KEY_PATH", tmp_path / ".secret_key"):
+        Config.save_session_state("student123", {"cookies": [{"name": "session", "value": "super-secret"}]})
+        raw = db.get("LMS_SESSION_STATE")
+
+    assert raw.startswith("enc:")
+    assert "super-secret" not in raw
+
+
+def test_load_session_state_returns_none_when_missing(tmp_path):
+    """저장된 세션이 없으면 None을 반환한다."""
+    from src.config import Config
+
+    with _make_db(tmp_path):
+        assert Config.load_session_state() is None
+
+
+def test_clear_session_state_removes_saved_session(tmp_path):
+    """clear_session_state 이후에는 세션을 복원할 수 없어야 한다 (명시적 로그아웃)."""
+    from unittest.mock import patch
+
+    from src.config import Config
+
+    with _make_db(tmp_path), patch("src.crypto._KEY_PATH", tmp_path / ".secret_key"):
+        Config.save_session_state("student123", {"cookies": []})
+        Config.clear_session_state()
+        assert Config.load_session_state() is None
+
+
+def test_load_session_state_with_different_key_returns_none(tmp_path):
+    """복호화 키가 바뀌면(다른 머신 등) 손상된 값으로 취급해 None을 반환해야 한다."""
+    from unittest.mock import patch
+
+    from src.config import Config
+
+    with _make_db(tmp_path):
+        with patch("src.crypto._KEY_PATH", tmp_path / "key1"):
+            Config.save_session_state("student123", {"cookies": []})
+        with patch("src.crypto._KEY_PATH", tmp_path / "key2"):
+            assert Config.load_session_state() is None
