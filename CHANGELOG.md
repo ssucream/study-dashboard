@@ -2,6 +2,26 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.11.2] - 2026-09-15
+
+### Fixed
+
+- **자동 모드가 백엔드 재시작 후 수동 로그인 전까지는 스케줄대로 동작하지 않던 문제**: 자동
+  재생 루프는 로그인으로 생성되는 `app_state.scraper` 프로세스 메모리 싱글턴에 전적으로
+  의존한다. 백엔드가 재시작되면(재배포·크래시·호스트 재부팅) 이 싱글턴과 루프가 함께
+  사라지고, DB에 `AUTO_ENABLED=true`가 저장돼 있어도 누군가 웹 대시보드에 다시 로그인하기
+  전까지는 9/13/18/23시 스케줄이 조용히 아무 일도 하지 않았다(로그 확인 결과 실제로 3일간
+  스케줄 미실행). 학번/비밀번호는 여전히 DB에 저장하지 않아 자격증명으로 자동 로그인할 수는
+  없으므로, 로그인 성공 시 Playwright 세션 쿠키(storage_state)를 암호화해 저장해두고
+  (`Config.save_session_state`/`load_session_state`, DB 키 `LMS_SESSION_STATE`), 백엔드 부팅
+  시 `_resume_auto_from_saved_session()`(`backend/main.py`)이 그 쿠키로 로그인 없이 세션을
+  복원해 자동 모드를 재개하도록 했다. 쿠키가 이미 만료됐으면(재로그인 불가) 조용히 포기하고
+  텔레그램으로만 알린 뒤 기존처럼 수동 로그인을 기다린다(`notify_session_resume_failed`).
+  자동 루프가 주기적으로 브라우저를 재시작할 때마다 최신 쿠키로 다시 저장해 SSO 쿠키 로테이션에
+  대비하고(`backend/api/routes/auto.py:_snapshot_session`), 명시적 로그아웃 시에는 저장된
+  쿠키까지 지워 다음 재개는 반드시 수동 로그인을 거치게 한다
+  (`src/scraper/course_scraper.py`, `src/config.py`, `backend/api/routes/auth.py`)
+
 ## [v26.11.1] - 2026-09-11
 
 ### Fixed
