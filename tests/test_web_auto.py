@@ -235,6 +235,67 @@ async def test_auto_cycle_scrape_waits_for_scraper_lock(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_auto_cycle_force_logs_out_on_unrecoverable_session_loss(monkeypatch):
+    """쿠키 전용(자격증명 없는) 세션이 실행 중 만료돼 자동 재로그인도 실패하면,
+    다음 스케줄까지 조용히 기다리는 대신 즉시 로그아웃 처리하고 자동 모드를 끈다."""
+
+    class _CookieOnlyScraper:
+        username = ""
+        password = ""
+        _page = object()
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+        async def fetch_courses(self):
+            raise RuntimeError("자동 재로그인 실패. 학번/비밀번호를 확인하세요.")
+
+        async def fetch_all_details(self, courses):
+            return []
+
+    scraper = _CookieOnlyScraper()
+    app_state.scraper = scraper
+    app_state.user_id = "test-user"
+    app_state.auto.enabled = True
+
+    await auto_route._run_auto_cycle()
+
+    assert app_state.scraper is None
+    assert scraper.closed is True
+    assert app_state.user_id == ""
+    assert app_state.auto.enabled is False
+    assert "다시 로그인" in app_state.auto.error
+
+
+@pytest.mark.asyncio
+async def test_auto_cycle_keeps_retrying_when_credentials_present(monkeypatch):
+    """자격증명이 있는 세션의 재로그인 실패는 강제 로그아웃 대상이 아니다 —
+    SSO 일시 장애 등으로 다음 사이클엔 회복될 수 있으므로 에러만 남기고 재시도 기회를 남긴다."""
+
+    class _CredentialedScraper:
+        username = "u"
+        password = "p"
+        _page = object()
+
+        async def fetch_courses(self):
+            raise RuntimeError("자동 재로그인 실패. 학번/비밀번호를 확인하세요.")
+
+        async def fetch_all_details(self, courses):
+            return []
+
+    scraper = _CredentialedScraper()
+    app_state.scraper = scraper
+    app_state.auto.enabled = True
+
+    await auto_route._run_auto_cycle()
+
+    assert app_state.scraper is scraper
+    assert app_state.auto.enabled is True
+    assert "강의 목록 갱신 실패" in app_state.auto.error
+
+
+@pytest.mark.asyncio
 async def test_auto_cycle_does_not_complete_lecture_when_attendance_not_recorded(monkeypatch):
     """재생은 ended=True지만 LMS 출석 미반영(error 설정)이면 완료 처리하지 않고 재시도 대상으로 남긴다."""
     course = Course(id="1", long_name="성서읽기", href="/courses/1", term="2026-1")

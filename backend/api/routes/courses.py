@@ -1,6 +1,7 @@
 from collections import Counter
 
 from backend.api.auth_dep import require_auth
+from backend.api.session_guard import force_logout_on_session_loss, is_unrecoverable_session_loss
 from backend.api.state import app_state, scraper_lock
 from backend.api.summary_store import summaries_dir, summary_for_lecture
 from fastapi import APIRouter, HTTPException
@@ -28,6 +29,12 @@ async def ensure_courses_loaded() -> None:
             courses = await app_state.scraper.fetch_courses()
             details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
         except Exception as e:
+            if is_unrecoverable_session_loss(app_state.scraper, e):
+                await force_logout_on_session_loss(app_state.scraper)
+                raise HTTPException(
+                    status_code=401,
+                    detail="로그인 세션이 만료되어 로그아웃되었습니다. 다시 로그인해주세요.",
+                ) from e
             raise HTTPException(
                 status_code=503,
                 detail=f"강의 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요. ({type(e).__name__})",
@@ -113,6 +120,12 @@ async def refresh_courses():
             courses = await app_state.scraper.fetch_courses()
             details = await app_state.scraper.fetch_all_details(courses, concurrency=3)
         except Exception as e:
+            if is_unrecoverable_session_loss(app_state.scraper, e):
+                await force_logout_on_session_loss(app_state.scraper)
+                raise HTTPException(
+                    status_code=401,
+                    detail="로그인 세션이 만료되어 로그아웃되었습니다. 다시 로그인해주세요.",
+                ) from e
             raise HTTPException(
                 status_code=503,
                 detail=f"강의 정보를 불러오지 못했습니다. ({type(e).__name__})",

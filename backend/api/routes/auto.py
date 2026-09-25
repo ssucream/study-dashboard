@@ -6,6 +6,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 
 from backend.api.auth_dep import require_auth
+from backend.api.session_guard import force_logout_on_session_loss, is_unrecoverable_session_loss
 from backend.api.state import PlaybackProgress, app_state, scraper_lock
 from backend.api.task_manager import ManagedTask, task_manager
 from fastapi import APIRouter, HTTPException
@@ -401,7 +402,12 @@ async def _run_auto_cycle() -> None:
     except asyncio.CancelledError:
         raise
     except Exception as e:
-        app_state.auto.error = f"강의 목록 갱신 실패: {e}"
+        if is_unrecoverable_session_loss(app_state.scraper, e):
+            await force_logout_on_session_loss(app_state.scraper)
+            app_state.auto.error = "로그인 세션이 만료되어 로그아웃되었습니다. 다시 로그인해주세요."
+            app_state.auto.enabled = False
+        else:
+            app_state.auto.error = f"강의 목록 갱신 실패: {e}"
         return
 
     # 마감 임박 알림 (텔레그램 설정 시)

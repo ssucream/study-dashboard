@@ -1,4 +1,4 @@
-import { api, getAutoSuppressions, resetAutoSuppression } from './api.js';
+import { api, getAutoSuppressions, resetAutoSuppression, setUnauthorizedHandler } from './api.js';
 import { state } from './state.js';
 import { $, $$, esc, fmtTime } from './utils.js';
 import { applySettingsVisibility, loadAppSettings, loadSettings } from './settings.js';
@@ -61,6 +61,13 @@ function showLogin() {
   stopStatusWs();
   stopAllDownloadTaskPolling();
 }
+
+// 세션이 실행 도중 만료돼 백엔드가 강제 로그아웃 처리한 경우, 폴링/WS가 받는 401을
+// 감지해 조용히 실패하는 대신 로그인 화면으로 되돌린다.
+setUnauthorizedHandler(() => {
+  if (!state.userId) return;
+  showLogin();
+});
 
 async function checkVersion() {
   try {

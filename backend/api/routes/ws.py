@@ -17,6 +17,11 @@ async def ws_status(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         while True:
+            if not app_state.scraper:
+                # 스트리밍 도중 세션이 끊긴 경우(예: 강제 로그아웃) — 연결을 닫아
+                # 프런트가 HTTP 폴링으로 전환하고 401을 통해 로그인 화면으로 돌아가게 한다.
+                await websocket.close(code=1008)
+                return
             pb = app_state.playback
             auto = app_state.auto
             await websocket.send_text(

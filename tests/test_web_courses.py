@@ -10,20 +10,27 @@ from src.scraper.models import Course
 
 class _FakeScraper:
     _page = object()
+    username = "u"
+    password = "p"
 
-    def __init__(self, courses=None, details=None, fail=False):
+    def __init__(self, courses=None, details=None, fail=False, fail_message="scrape failed"):
         self._courses = courses or []
         self._details = details or []
         self._fail = fail
+        self._fail_message = fail_message
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
 
     async def fetch_courses(self):
         if self._fail:
-            raise RuntimeError("scrape failed")
+            raise RuntimeError(self._fail_message)
         return self._courses
 
     async def fetch_all_details(self, courses, concurrency=3):
         if self._fail:
-            raise RuntimeError("scrape failed")
+            raise RuntimeError(self._fail_message)
         return self._details
 
 
@@ -85,6 +92,24 @@ async def test_refresh_courses_preserves_state_on_scrape_failure():
     assert exc.value.status_code == 503
     assert app_state.courses == [old_course]
     assert app_state.details == [None]
+
+
+@pytest.mark.asyncio
+async def test_refresh_courses_forces_logout_on_unrecoverable_session_loss():
+    """쿠키 전용(자격증명 없는) 세션이 만료돼 자동 재로그인도 실패하면 강제 로그아웃하고 401을 낸다."""
+    scraper = _FakeScraper(fail=True, fail_message="자동 재로그인 실패. 학번/비밀번호를 확인하세요.")
+    scraper.username = ""
+    scraper.password = ""
+    app_state.scraper = scraper
+    app_state.user_id = "test-user"
+
+    with pytest.raises(HTTPException) as exc:
+        await courses_route.refresh_courses()
+
+    assert exc.value.status_code == 401
+    assert app_state.scraper is None
+    assert scraper.closed is True
+    assert app_state.user_id == ""
 
 
 @pytest.mark.asyncio

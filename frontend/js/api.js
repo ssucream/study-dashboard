@@ -1,3 +1,11 @@
+// 세션 만료로 인한 401을 감지했을 때 앱에 알리는 콜백. 로그인 요청 자체의 401
+// (아이디/비밀번호 오류)은 이미 로그인 화면에 있으므로 대상에서 제외한다.
+let _onUnauthorized = null;
+
+export function setUnauthorizedHandler(fn) {
+  _onUnauthorized = fn;
+}
+
 export async function getAutoSuppressions() {
   const res = await api('GET', '/api/auto/suppressions');
   return res.suppressions || [];
@@ -33,6 +41,9 @@ export async function api(method, path, body, timeoutMs = 0) {
       : await fetchPromise;
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: '알 수 없는 오류' }));
+      if (res.status === 401 && path !== '/api/auth/login' && _onUnauthorized) {
+        _onUnauthorized();
+      }
       throw new Error(err.detail || res.statusText);
     }
     return res.json();

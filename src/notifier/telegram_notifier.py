@@ -156,6 +156,20 @@ def notify_session_resume_failed(bot_token: str, chat_id: str) -> bool:
     return _send_message(bot_token, chat_id, text)
 
 
+def notify_session_expired_mid_run(bot_token: str, chat_id: str) -> bool:
+    """쿠키로만 복원된 세션이 실행 도중 만료되어 자동 재로그인도 실패해 강제 로그아웃했음을 알린다.
+
+    `notify_session_resume_failed`(백엔드 부팅 시 재개 실패)와 달리, 이번엔 한동안
+    정상 동작하다가 도중에 끊긴 경우다. 학번/비밀번호가 메모리에 없어 자동 복구가
+    불가능하므로 수동 로그인이 필요하다.
+    """
+    text = (
+        "[알림] 로그인 세션이 만료되어 자동 로그아웃되었습니다.\n"
+        "웹 대시보드에서 다시 로그인해주세요. (자동 모드가 켜져 있었다면 로그인 시 자동 재개됩니다)"
+    )
+    return _send_message(bot_token, chat_id, text)
+
+
 def notify_playback_suppressed(
     bot_token: str,
     chat_id: str,

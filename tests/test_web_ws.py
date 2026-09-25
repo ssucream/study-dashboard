@@ -51,3 +51,23 @@ async def test_ws_status_accepts_authenticated_and_streams():
     ws.accept.assert_awaited_once()
     ws.close.assert_not_called()
     ws.send_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ws_status_closes_when_session_lost_mid_stream(monkeypatch):
+    """회귀 테스트: 스트리밍 도중 세션이 끊기면(예: 강제 로그아웃) 다음 루프에서
+    연결을 닫아 프런트가 폴링으로 전환하고 로그인 화면으로 돌아갈 수 있게 한다."""
+    app_state.scraper = _FakeScraper()
+    ws = AsyncMock()
+
+    async def fake_sleep(_seconds):
+        # 다음 루프 진입 전 세션 소실을 시뮬레이션한다.
+        app_state.scraper = None
+
+    monkeypatch.setattr("backend.api.routes.ws.asyncio.sleep", fake_sleep)
+
+    await ws_status(ws)
+
+    ws.accept.assert_awaited_once()
+    ws.send_text.assert_awaited_once()
+    ws.close.assert_awaited_once_with(code=1008)
