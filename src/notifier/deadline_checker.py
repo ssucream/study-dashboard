@@ -1,8 +1,9 @@
 """
 마감 임박 알림 모듈.
 
-비디오가 아닌 강의 항목(퀴즈, 과제 등)의 마감이 임박할 때
-텔레그램으로 알림을 전송한다.
+아직 해야 할 항목(미시청 영상, 미제출 과제·퀴즈)의 마감이 임박할 때
+텔레그램으로 알림을 전송한다. 대상 판정은 대시보드의 "재생 필요/제출 필요"와 같은
+`LectureItem.needs_watch`/`needs_submission`을 따른다.
 """
 
 import hashlib
@@ -23,11 +24,7 @@ _DISPLAY_WINDOW_HOURS = 168
 _TYPE_LABELS = {
     LectureType.QUIZ: "퀴즈",
     LectureType.ASSIGNMENT: "과제",
-    LectureType.DISCUSSION: "토론",
-    LectureType.WIKI_PAGE: "위키",
-    LectureType.FILE: "파일",
-    LectureType.ZOOM: "Zoom",
-    LectureType.OTHER: "기타",
+    **dict.fromkeys(VIDEO_LECTURE_TYPES, "영상"),
 }
 
 
@@ -119,7 +116,10 @@ def _iter_pending_deadlines(
     details: list[CourseDetail | None],
     now: datetime,
 ):
-    """미완료·비디오 외 강의 중 마감이 남은 항목을 순회한다.
+    """해야 할 일(미시청 영상·미제출 과제/퀴즈)이 남았고 마감이 미래인 항목을 순회한다.
+
+    완료·출석 인정·예정(is_upcoming) 제외는 `needs_watch`/`needs_submission`이 처리한다.
+    그 외 유형(파일·위키·Zoom·기타·토론)은 완료 처리할 방법이 없어 알림 대상이 아니다.
 
     Yields:
         (course, lecture, type_label, remaining_hours)
@@ -129,14 +129,7 @@ def _iter_pending_deadlines(
             continue
         for week in detail.weeks:
             for lec in week.lectures:
-                if lec.lecture_type in VIDEO_LECTURE_TYPES:
-                    continue
-                # 완료 판별: completion 또는 attendance 둘 중 하나라도 완료면 건너뜀
-                if lec.completion == "completed":
-                    continue
-                if lec.attendance in ("attendance", "late", "excused"):
-                    continue
-                if lec.is_upcoming:
+                if not (lec.needs_watch or lec.needs_submission):
                     continue
                 if not lec.end_date:
                     continue

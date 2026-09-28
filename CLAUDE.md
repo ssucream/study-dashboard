@@ -82,7 +82,10 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   `_snapshot_session()`으로 쿠키를 다시 저장해 최신 상태를 유지하고, 명시적 로그아웃 시에는
   `Config.clear_session_state()`로 저장된 쿠키까지 지워 다음 재개는 반드시 수동 로그인을
   거치게 한다. 쿠키 탈취 시 비밀번호 없이도 세션을 하이재킹할 수 있다는 트레이드오프가 있다.
-- **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 미제출 과제/마감 임박 항목 텔레그램 알림.
+- **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 마감 임박 항목 텔레그램 알림.
+  대상은 대시보드의 "재생 필요/제출 필요"와 동일한 `LectureItem.needs_watch`(미시청 영상)/
+  `needs_submission`(미제출 과제·퀴즈)뿐이다. 기타·파일·위키·Zoom·토론은 완료 처리할 방법이
+  없어 영원히 `incomplete`로 남으므로 대상에서 제외한다.
 - **버전 체크**: `src/updater.py` — 과목 목록 로딩과 병렬로 GitHub 최신 버전 확인.
 - **예상 문제**: `src/quiz/` — 요약본·STT·업로드 강의자료(PDF/PPTX/DOCX)로 예상 문제 생성·채점. AI 호출은 `summarizer.generate_text()` 재사용. 객관식은 로컬 채점, 주관식은 채점기준+답안을 LLM 1회 호출. 문제셋/문항/풀이 이력은 SQLite(`quiz_sets`/`quiz_questions`/`quiz_attempts`).
 - **백그라운드 Task**: `backend/api/task_manager.py` — 다운로드/재생/자동모드 Task 생명주기 관리 및 SQLite 영속화.

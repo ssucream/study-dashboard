@@ -56,9 +56,31 @@ def test_find_approaching_returns_one_item_per_lecture_within_window():
     assert len(items) == len({i.lecture.title for i in items})
 
 
-def test_find_approaching_ignores_video_lectures():
-    video = LectureItem(title="영상", item_url="/v", lecture_type=LectureType.MOVIE, end_date="3월 16일 오후 1:00")
-    detail = _detail(video)
+def _video(title: str, end_date: str | None, **kw) -> LectureItem:
+    return LectureItem(title=title, item_url=f"/v/{title}", lecture_type=LectureType.MOVIE, end_date=end_date, **kw)
+
+
+def test_find_approaching_includes_unwatched_video_only():
+    detail = _detail(
+        _video("미시청", "3월 16일 오후 1:00"),
+        _video("완료", "3월 16일 오후 1:00", completion="completed"),  # 제외
+        _video("출석인정", "3월 16일 오후 1:00", attendance="attendance"),  # 제외 (needs_watch=False)
+        _video("예정", "3월 16일 오후 1:00", is_upcoming=True),  # 제외
+    )
+    items = dc.find_approaching_deadlines([detail.course], [detail], now=_NOW)
+
+    assert [i.lecture.title for i in items] == ["미시청"]
+    assert items[0].type_label == "영상"
+
+
+@pytest.mark.parametrize(
+    "lecture_type",
+    [LectureType.OTHER, LectureType.FILE, LectureType.WIKI_PAGE, LectureType.ZOOM, LectureType.DISCUSSION],
+)
+def test_find_approaching_ignores_types_without_completion(lecture_type):
+    """완료 처리할 방법이 없는 유형(기타 등)은 알림 대상이 아니다 — 대시보드 0건 표시와 일치."""
+    other = LectureItem(title="1주차", item_url="/o", lecture_type=lecture_type, end_date="3월 16일 오후 1:00")
+    detail = _detail(other)
     assert dc.find_approaching_deadlines([detail.course], [detail], now=_NOW) == []
 
 
