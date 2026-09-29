@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from src.converter.audio_converter import NoAudioStreamError
 from src.downloader import pipeline
 
 
@@ -261,6 +262,47 @@ async def test_download_pipeline_skips_summary_on_empty_transcript(monkeypatch, 
         download_dir=str(tmp_path), course_name="테스트", week_label="2주차", lecture_title="샘플영상"
     )
     assert not txt_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_pipeline_skips_when_video_has_no_audio_track(monkeypatch, tmp_path):
+    """오디오 트랙 없는 영상 — mp3/STT/요약을 건너뛰고 mp4는 보존한 채 오류 없이 완료돼야 한다."""
+
+    async def fake_extract_video_url(page, lecture_url):
+        return "https://cdn.example/video.mp4"
+
+    async def fake_download_video_with_browser(page, video_url, save_path, on_progress=None):
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"mp4")
+
+    def fake_convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None):
+        raise NoAudioStreamError("오디오 트랙 없음")
+
+    def fake_transcribe(*args, **kwargs):
+        raise AssertionError("오디오가 없으면 STT를 호출하면 안 된다")
+
+    monkeypatch.setattr(pipeline, "extract_video_url", fake_extract_video_url)
+    monkeypatch.setattr(pipeline, "download_video_with_browser", fake_download_video_with_browser)
+    monkeypatch.setattr(pipeline, "convert_to_mp3", fake_convert_to_mp3)
+    monkeypatch.setattr("src.stt.transcriber.transcribe", fake_transcribe)
+
+    result = await pipeline.download_lecture_media(
+        page=object(),
+        lecture_url="https://canvas.ssu.ac.kr/courses/1/items/1",
+        lecture_title="5주차 강의영상",
+        week_label="5주차",
+        course_name="테스트",
+        download_dir=str(tmp_path),
+        rule="mp3",
+        stt_enabled=True,
+    )
+
+    assert result["stt"]["status"] == "empty"
+    assert [f["type"] for f in result["files"]] == ["mp4"]
+    _base, mp4_path, _mp3, _txt, _summary = pipeline.build_download_paths(
+        download_dir=str(tmp_path), course_name="테스트", week_label="5주차", lecture_title="5주차 강의영상"
+    )
+    assert mp4_path.exists()
 
 
 def test_download_info_for_lecture_treats_path_traversal_as_not_exists(monkeypatch, tmp_path):

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import normalize_download_rule
-from src.converter.audio_converter import convert_to_mp3
+from src.converter.audio_converter import NoAudioStreamError, convert_to_mp3
 from src.downloader.video_downloader import download_video_with_browser, extract_video_url, make_filepath
 
 StageCallback = Callable[[str, str, float | None], None]
@@ -174,22 +174,37 @@ async def download_lecture_media(
 
     files: list[dict[str, str]] = []
     mp3_file: dict[str, str] | None = None
+    no_audio = False
     if normalized_rule in {"mp4", "both"}:
         files.append({"type": "mp4", "path": str(mp4_path)})
 
     if normalized_rule in {"mp3", "both"}:
         stage("converting", "mp3 파일로 변환하는 중입니다.", 90)
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, convert_to_mp3, mp4_path, mp3_path)
-        mp3_file = {"type": "mp3", "path": str(mp3_path)}
-        files.append(mp3_file)
-        if normalized_rule == "mp3":
-            mp4_path.unlink(missing_ok=True)
+        try:
+            await loop.run_in_executor(None, convert_to_mp3, mp4_path, mp3_path)
+        except NoAudioStreamError:
+            # 오디오 트랙이 없는 영상은 오류가 아니다. mp4는 지우지 않고 mp3/STT/요약만 건너뛴다.
+            no_audio = True
+            if normalized_rule == "mp3":
+                files.append({"type": "mp4", "path": str(mp4_path)})
+            stage("no_audio", "오디오 트랙이 없어 mp3 변환/STT/요약을 건너뜁니다.", 99)
+        else:
+            mp3_file = {"type": "mp3", "path": str(mp3_path)}
+            files.append(mp3_file)
+            if normalized_rule == "mp3":
+                mp4_path.unlink(missing_ok=True)
 
     stt_result: dict[str, Any] = {"enabled": False}
+    if no_audio:
+        stt_result = {
+            "enabled": stt_enabled,
+            "status": "empty",
+            "message": "영상에 오디오 트랙이 없어 mp3 변환/STT/요약을 건너뛰었습니다.",
+        }
     summary_result: dict[str, Any] = {"enabled": False}
     try:
-        if stt_enabled and normalized_rule in {"mp3", "both"}:
+        if stt_enabled and not no_audio and normalized_rule in {"mp3", "both"}:
             stage(
                 "stt_loading",
                 f"Whisper {stt_model or 'base'} 모델을 로딩하는 중입니다. 첫 실행 시 시간이 걸릴 수 있습니다.",

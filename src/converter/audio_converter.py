@@ -8,6 +8,10 @@ import subprocess
 from pathlib import Path
 
 
+class NoAudioStreamError(RuntimeError):
+    """입력 영상에 오디오 트랙이 없어 mp3를 만들 수 없을 때 발생한다."""
+
+
 def convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None) -> Path:
     """
     mp4 파일을 mp3로 변환한다.
@@ -21,6 +25,7 @@ def convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None) -> Path:
 
     Raises:
         FileNotFoundError: mp4 파일이 없거나 ffmpeg가 설치되지 않은 경우
+        NoAudioStreamError: 영상에 오디오 트랙이 없는 경우 (RuntimeError 하위 클래스)
         RuntimeError: ffmpeg 변환 실패 또는 타임아웃 시
     """
     if not mp4_path.exists():
@@ -57,6 +62,10 @@ def convert_to_mp3(mp4_path: Path, mp3_path: Path | None = None) -> Path:
         raise RuntimeError("mp3 변환이 30분을 초과해 중단되었습니다. 원본 파일이 손상되었을 수 있습니다.") from None
 
     if result.returncode != 0:
+        # -vn으로 비디오를 빼면 오디오 없는 영상은 출력 스트림이 0개가 된다.
+        if "does not contain any stream" in result.stderr:
+            mp3_path.unlink(missing_ok=True)
+            raise NoAudioStreamError("영상에 오디오 트랙이 없어 mp3로 변환할 수 없습니다.")
         raise RuntimeError(f"mp3 변환 실패:\n{result.stderr[-500:]}")
 
     return mp3_path.resolve()

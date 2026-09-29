@@ -118,7 +118,7 @@ async def start_download(req: DownloadTaskRequest):
                     lecture_title=req.lecture_title,
                     lecture_url=req.lecture_url,
                     week_label=req.week_label,
-                    message="음성에서 인식된 텍스트가 없어 STT/요약을 건너뛰었습니다.",
+                    message=stt_result.get("message") or "음성에서 인식된 텍스트가 없어 STT/요약을 건너뛰었습니다.",
                     metadata={"task_id": managed.id, "stt": stt_result},
                 )
             if stt_result.get("status") == "completed":

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.converter.audio_converter import convert_to_mp3
+from src.converter.audio_converter import NoAudioStreamError, convert_to_mp3
 
 
 def test_convert_to_mp3_default_path(tmp_path):
@@ -54,4 +54,15 @@ def test_convert_to_mp3_timeout(tmp_path):
     mp4.write_bytes(b"fake")
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=1800)):
         with pytest.raises(RuntimeError, match="30분을 초과"):
+            convert_to_mp3(mp4)
+
+
+def test_convert_to_mp3_no_audio_stream(tmp_path):
+    """오디오 트랙이 없는 영상은 NoAudioStreamError (RuntimeError 하위)."""
+    mp4 = tmp_path / "video.mp4"
+    mp4.write_bytes(b"fake")
+    stderr = "Stream #0:0: Video: h264\nOutput file #0 does not contain any stream"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stderr=stderr)
+        with pytest.raises(NoAudioStreamError):
             convert_to_mp3(mp4)
