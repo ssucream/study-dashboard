@@ -48,6 +48,18 @@ def _parse_completion_class(class_attr: str) -> str:
     return "completed" if "completed" in class_attr.split() else "incomplete"
 
 
+def _is_current_term(term: str, current_term: str) -> bool:
+    """과목 term이 현재 학기에 속하는지 판별한다.
+
+    비교과(법정의무교육 등)는 "비정규과정(2026)"처럼 연도 단위 term을 쓰므로,
+    현재 학기("2026년 2학기")와 같은 연도의 비정규과정도 현재 학기로 포함한다.
+    """
+    if term == current_term:
+        return True
+    year = re.match(r"\d{4}", current_term)
+    return bool(year) and term == f"비정규과정({year.group()})"
+
+
 _TYPE_CLASS_MAP = {
     "movie": LectureType.MOVIE,
     "readystream": LectureType.READYSTREAM,
@@ -261,7 +273,7 @@ class CourseScraper:
         # (이전 학기 과목이 즐겨찾기 등으로 남아있는 경우 제외)
         if term_counts:
             current_term = max(term_counts, key=lambda t: term_counts[t])
-            courses = [c for c in raw_courses if c.term == current_term]
+            courses = [c for c in raw_courses if _is_current_term(c.term, current_term)]
         else:
             courses = raw_courses
         return courses

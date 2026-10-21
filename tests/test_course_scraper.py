@@ -3,7 +3,7 @@
 class 문자열은 실제 canvas.ssu.ac.kr Learning X DOM에서 캡처한 값이다.
 """
 
-from src.scraper.course_scraper import _parse_attendance_class, _parse_completion_class
+from src.scraper.course_scraper import _is_current_term, _parse_attendance_class, _parse_completion_class
 
 
 class TestParseAttendanceClass:
@@ -41,3 +41,18 @@ class TestParseCompletionClass:
 
     def test_empty(self):
         assert _parse_completion_class("") == "incomplete"
+
+
+class TestIsCurrentTerm:
+    def test_same_term(self):
+        assert _is_current_term("2026년 2학기", "2026년 2학기")
+
+    def test_previous_term_excluded(self):
+        assert not _is_current_term("2026년 1학기", "2026년 2학기")
+
+    def test_same_year_non_regular_included(self):
+        # 실제 STUDENT_PLANNER_COURSES의 비교과 과목 term 값
+        assert _is_current_term("비정규과정(2026)", "2026년 2학기")
+
+    def test_other_year_non_regular_excluded(self):
+        assert not _is_current_term("비정규과정(2025)", "2026년 2학기")
