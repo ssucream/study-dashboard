@@ -300,6 +300,29 @@ def _get_ssu_model_catalog(api_key: str) -> tuple[list[dict[str, str]], str]:
     return fallback, "fallback"
 
 
+def get_ssu_credits(api_key: str) -> dict:
+    """숭실대 게이트웨이 크레딧 잔액. {"quota","used","remaining","renewal_date"} — 실패 시 RuntimeError."""
+    try:
+        response = requests.get(f"{SSU_BASE_URL}/credits/", headers={"Authorization": f"Bearer {api_key}"}, timeout=10)
+    except requests.RequestException as e:
+        raise RuntimeError(f"숭실대 API에 연결할 수 없습니다: {e}") from e
+    if response.status_code == 401:
+        raise RuntimeError("API 키가 올바르지 않습니다.")
+    if not response.ok:
+        raise RuntimeError(f"크레딧 조회 실패 (HTTP {response.status_code})")
+    try:
+        payload = response.json()
+        total = payload["total"]
+        return {
+            "quota": float(total["quota"]),
+            "used": float(total["used"]),
+            "remaining": float(total["remaining"]),
+            "renewal_date": (payload.get("monthly_allocated") or {}).get("renewal_date") or "",
+        }
+    except (ValueError, KeyError, TypeError) as e:
+        raise RuntimeError("크레딧 응답 형식을 해석할 수 없습니다.") from e
+
+
 def summarize(
     txt_path: Path,
     agent: str,

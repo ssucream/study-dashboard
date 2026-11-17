@@ -93,6 +93,55 @@ function applySessionCheckVisibility(form = $('#settings-form')) {
   $('#session-check-interval-row')?.classList.toggle('hidden', !form?.elements.SESSION_CHECK_ENABLED?.checked);
 }
 
+// 숭실대 API 연결 테스트 + 남은 크레딧 막대
+function renderSsuCredits(credits) {
+  const box = $('#ssu-credits');
+  if (!box) return;
+  if (!credits || !(credits.quota > 0)) {
+    box.classList.add('hidden');
+    return;
+  }
+  const pct = Math.max(0, Math.min(100, (credits.remaining / credits.quota) * 100));
+  const fmt = n => n.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
+  $('#ssu-credits-text').textContent = `${fmt(credits.remaining)} / ${fmt(credits.quota)} (${pct.toFixed(1)}%)`;
+  const fill = $('#ssu-credits-fill');
+  fill.style.width = `${pct}%`;
+  fill.className = `h-full rounded-full transition-all ${pct > 30 ? 'bg-emerald-500' : pct > 10 ? 'bg-amber-500' : 'bg-red-500'}`;
+  $('#ssu-credits-bar').setAttribute('aria-valuenow', pct.toFixed(0));
+  const renewal = credits.renewal_date ? new Date(credits.renewal_date) : null;
+  $('#ssu-credits-renewal').textContent = renewal && !isNaN(renewal)
+    ? `사용 ${fmt(credits.used)} · ${renewal.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} 갱신`
+    : `사용 ${fmt(credits.used)}`;
+  box.classList.remove('hidden');
+}
+
+async function runSsuTest({ silent = false } = {}) {
+  const btn = $('#btn-ssu-test');
+  const result = $('#ssu-test-result');
+  if (!btn || !result) return;
+  btn.disabled = true;
+  btn.textContent = '테스트 중...';
+  if (!silent) { result.textContent = ''; result.className = 'text-xs'; }
+  try {
+    const r = await api('POST', '/api/settings/ssu/test', null, 20000);
+    renderSsuCredits(r.credits);
+    if (r.model && !r.model_available) {
+      result.textContent = `⚠ 연결 성공, 하지만 ${r.model}은(는) 사용 가능 모델 목록에 없습니다`;
+      result.className = 'text-xs text-amber-400';
+    } else {
+      result.textContent = `✓ 연결 성공 · 사용 가능 모델 ${r.model_count}개`;
+      result.className = 'text-xs text-green-400';
+    }
+  } catch (err) {
+    renderSsuCredits(null);
+    result.textContent = `✗ ${err.message}`;
+    result.className = 'text-xs text-red-400';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '연결 테스트';
+  }
+}
+
 function applyAiAgentVisibility(form = $('#settings-form')) {
   if (!form) return;
   const agent = form.elements.AI_AGENT?.value || state.settings.AI_AGENT || 'gemini';
@@ -220,6 +269,8 @@ export async function loadSettings() {
     applyTelegramVisibility(form);
     updateSsuModelHint();
     setSessionCheckInterval(s.SESSION_CHECK_INTERVAL_MINUTES);
+    // 키가 저장돼 있으면 설정 화면을 열 때 잔액을 자동으로 보여준다 (조회는 크레딧을 쓰지 않음)
+    if (s.HAS_SSU_API_KEY) runSsuTest({ silent: true });
     applySessionCheckVisibility(form);
     // 리사이즈는 섹션 표시 여부가 확정된 뒤 실행해야 scrollHeight가 올바르게 계산된다.
     requestAnimationFrame(() => {
@@ -285,6 +336,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
   try {
     await api('PUT', '/api/settings', payload);
     await loadAppSettings();
+    if (state.settings.HAS_SSU_API_KEY) runSsuTest({ silent: true });
     applySettingsVisibility(form);
     applyTelegramVisibility(form);
     const msg = $('#settings-success');
@@ -309,6 +361,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
 $('#settings-form').elements.SSU_MODEL?.addEventListener('input', updateSsuModelHint);
 $('#settings-form').elements.SESSION_CHECK_ENABLED?.addEventListener('change', () => applySessionCheckVisibility());
 $('#session-check-hours')?.addEventListener('change', syncSessionCheckSelects);
+
+$('#btn-ssu-test')?.addEventListener('click', () => runSsuTest());
 
 $('#btn-telegram-test')?.addEventListener('click', async () => {
   const btn = $('#btn-telegram-test');

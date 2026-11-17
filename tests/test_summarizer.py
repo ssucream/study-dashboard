@@ -504,3 +504,40 @@ def test_ssu_tier_covers_gateway_catalog():
     assert set(_SSU_LLM_IDS) >= SSU_RECOMMENDED
     assert set(_SSU_LEGACY) <= set(_SSU_LLM_IDS)
     assert {r for r in _SSU_LEGACY.values() if r} <= set(_SSU_LLM_IDS)
+
+
+def test_get_ssu_credits_parses_total_and_renewal():
+    from unittest.mock import MagicMock, patch
+
+    from src.summarizer.summarizer import get_ssu_credits
+
+    resp = MagicMock(ok=True, status_code=200)
+    resp.json.return_value = {
+        "object": "credit_balance",
+        "monthly_allocated": {
+            "quota": 3000.0,
+            "used": 5.0183,
+            "remaining": 2994.98,
+            "renewal_date": "2026-12-01T00:00:00+09:00",
+        },
+        "total": {"quota": 3000.0, "used": 5.02, "remaining": 2994.98},
+    }
+    with patch("src.summarizer.summarizer.requests.get", return_value=resp) as mock_get:
+        credits = get_ssu_credits("secret")
+    assert credits == {"quota": 3000.0, "used": 5.02, "remaining": 2994.98, "renewal_date": "2026-12-01T00:00:00+09:00"}
+    assert mock_get.call_args.args[0].endswith("/v1/gateway/credits/")
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "message"),
+    [(401, {}, "API 키가 올바르지 않습니다"), (500, {}, "HTTP 500"), (200, {"object": "x"}, "응답 형식")],
+)
+def test_get_ssu_credits_errors(status, body, message):
+    from unittest.mock import MagicMock, patch
+
+    from src.summarizer.summarizer import get_ssu_credits
+
+    resp = MagicMock(ok=status < 400, status_code=status)
+    resp.json.return_value = body
+    with patch("src.summarizer.summarizer.requests.get", return_value=resp), pytest.raises(RuntimeError, match=message):
+        get_ssu_credits("secret")

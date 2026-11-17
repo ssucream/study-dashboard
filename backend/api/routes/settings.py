@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from src import db, event_log
 from src.config import Config, normalize_download_rule, normalize_session_check_interval, parse_deadline_thresholds
 from src.crypto import encrypt
-from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog, ssu_model_tier
+from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog, get_ssu_credits, ssu_model_tier
 
 router = APIRouter()
 
@@ -127,6 +127,30 @@ async def test_telegram():
     if not ok:
         raise HTTPException(status_code=502, detail=error_msg or "텔레그램 연결에 실패했습니다.")
     return {"success": True}
+
+
+@router.post("/ssu/test")
+async def test_ssu():
+    """저장된 숭실대 API 키로 크레딧 잔액·모델 목록을 조회한다 (생성 호출이 아니라 크레딧을 쓰지 않음)."""
+    require_auth()
+    import asyncio
+
+    api_key = Config.SSU_API_KEY or ""
+    if not api_key:
+        raise HTTPException(status_code=409, detail="숭실대 API 키를 먼저 저장하세요.")
+    try:
+        credits = await asyncio.to_thread(get_ssu_credits, api_key)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    models, source = await asyncio.to_thread(get_model_catalog, "ssu", api_key)
+    model = Config.SSU_MODEL or ""
+    return {
+        "success": True,
+        "credits": credits,
+        "model_count": len(models) if source == "ssu-user" else 0,
+        "model": model,
+        "model_available": source == "ssu-user" and any(m["id"] == model for m in models),
+    }
 
 
 @router.put("")

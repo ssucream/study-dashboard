@@ -339,3 +339,43 @@ async def test_update_settings_normalizes_session_check_interval(monkeypatch, tm
     assert Config.SESSION_CHECK_ENABLED == "false"
     payload = await settings_route.get_settings()
     assert payload["SESSION_CHECK_INTERVAL_MINUTES"] == "360"
+
+
+@pytest.mark.asyncio
+async def test_ssu_test_requires_saved_key(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(Config, "SSU_API_KEY", "")
+    with pytest.raises(HTTPException) as exc:
+        await settings_route.test_ssu()
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_ssu_test_returns_credits_and_model_availability(monkeypatch):
+    credits = {"quota": 3000.0, "used": 5.0, "remaining": 2995.0, "renewal_date": ""}
+    monkeypatch.setattr(Config, "SSU_API_KEY", "key")
+    monkeypatch.setattr(Config, "SSU_MODEL", "gpt-6-luna")
+    monkeypatch.setattr(settings_route, "get_ssu_credits", lambda key: credits)
+    monkeypatch.setattr(
+        settings_route, "get_model_catalog", lambda agent, key: ([{"id": "gpt-6-luna"}, {"id": "glm-5.3"}], "ssu-user")
+    )
+    payload = await settings_route.test_ssu()
+    assert payload["credits"] == credits
+    assert payload["model_count"] == 2
+    assert payload["model_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_ssu_test_maps_gateway_error_to_502(monkeypatch):
+    from fastapi import HTTPException
+
+    def fail(key):
+        raise RuntimeError("API 키가 올바르지 않습니다.")
+
+    monkeypatch.setattr(Config, "SSU_API_KEY", "bad")
+    monkeypatch.setattr(settings_route, "get_ssu_credits", fail)
+    with pytest.raises(HTTPException) as exc:
+        await settings_route.test_ssu()
+    assert exc.value.status_code == 502
+    assert "API 키" in exc.value.detail
