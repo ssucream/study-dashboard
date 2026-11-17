@@ -82,6 +82,11 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
   `_snapshot_session()`으로 쿠키를 다시 저장해 최신 상태를 유지하고, 명시적 로그아웃 시에는
   `Config.clear_session_state()`로 저장된 쿠키까지 지워 다음 재개는 반드시 수동 로그인을
   거치게 한다. 쿠키 탈취 시 비밀번호 없이도 세션을 하이재킹할 수 있다는 트레이드오프가 있다.
+- **세션 주기 점검**: `backend/api/session_guard.py:session_watchdog_loop()` — lifespan에서 1분마다 깨어나
+  `SESSION_CHECK_ENABLED`/`SESSION_CHECK_INTERVAL_MINUTES`(30~360분, 30분 단위) 설정에 따라
+  새 page로 대시보드에 접속해 세션을 확인한다(keepalive 겸용). 살아있으면 쿠키를 재저장하고,
+  만료 시 학번/비밀번호가 메모리에 있으면 재로그인, 없으면(쿠키 복원 세션) `force_logout_on_session_loss()`로
+  강제 로그아웃 후 텔레그램 알림. `scraper_lock`이 잡혀 있으면 그 회차는 건너뛰고, 접속 오류는 로그아웃시키지 않는다.
 - **마감 알림**: `src/notifier/deadline_checker.py` — 로그인 직후 마감 임박 항목 텔레그램 알림.
   대상은 대시보드의 "재생 필요/제출 필요"와 동일한 `LectureItem.needs_watch`(미시청 영상)/
   `needs_submission`(미제출 과제·퀴즈)뿐이다. 기타·파일·위키·Zoom·토론은 완료 처리할 방법이
@@ -220,6 +225,8 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 | `LMS_USER_ID` | 학번 (메모리 세션 전용, DB 저장 금지) | — |
 | `LMS_PASSWORD` | 비밀번호 (메모리 세션 전용, DB 저장 금지) | — |
 | `PLAYBACK_VERIFY_ENABLED` | 재생 완료 후 LMS 강의 목록 재스크래핑으로 출석 반영 재검증 (비상 스위치). **재검증만** 끈다 — `_extract_watched_seconds` 우선순위와 `total_page` 산출 변경은 되돌리지 않으므로, 그 롤백은 해당 커밋 revert가 필요하다 | `true` / `false` |
+| `SESSION_CHECK_ENABLED` | 로그인 세션 주기 점검 (만료 시 텔레그램 알림) | `true` / `false` |
+| `SESSION_CHECK_INTERVAL_MINUTES` | 세션 점검 주기(분). 30분 단위, 30~360으로 정규화 | `30` |
 | `AUTO_MAX_RETRY_PER_LECTURE` | 자동 모드의 강의당 최대 재시도 횟수. 초과 시 pending에서 제외하고 1회 알림. `0`=무제한 | `3` |
 | `DOWNLOAD_ENABLED` | 영상 다운로드 사용 여부 | `true` / `false` |
 | `DOWNLOAD_DIR` | 다운로드 경로 (비워두면 자동) | `/downloads` |

@@ -108,7 +108,15 @@ async def lifespan(app: FastAPI):
 
     await _resume_auto_from_saved_session()
 
+    from backend.api.session_guard import session_watchdog_loop
+
+    session_watchdog = asyncio.create_task(session_watchdog_loop())
+
     yield
+
+    session_watchdog.cancel()
+    with suppress(asyncio.CancelledError):
+        await session_watchdog
 
     # 실행 중인 task(다운로드/재생/자동모드)를 취소해 부분 상태로 방치되지 않게 한다.
     # task_manager.cancel()의 finally에서 _persist_task()가 최종 상태를 DB에 남긴다.

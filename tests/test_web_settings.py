@@ -324,3 +324,18 @@ async def test_update_settings_rejects_unsuitable_ssu_model(monkeypatch, tmp_pat
     with pytest.raises(HTTPException) as exc:
         await settings_route.update_settings(settings_route.SettingsUpdate(SSU_MODEL="sonar-pro"))
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_settings_normalizes_session_check_interval(monkeypatch, tmp_path):
+    _make_db(tmp_path, monkeypatch)
+    from src import db
+
+    db.init()
+    await settings_route.update_settings(
+        settings_route.SettingsUpdate(SESSION_CHECK_ENABLED="false", SESSION_CHECK_INTERVAL_MINUTES="1000")
+    )
+    assert db.get("SESSION_CHECK_INTERVAL_MINUTES") == "360"
+    assert Config.SESSION_CHECK_ENABLED == "false"
+    payload = await settings_route.get_settings()
+    assert payload["SESSION_CHECK_INTERVAL_MINUTES"] == "360"

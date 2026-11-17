@@ -39,6 +39,15 @@ _AGENT_MODEL_ATTR = {
 }
 
 
+def normalize_session_check_interval(raw) -> int:
+    """세션 점검 간격(분)을 30분 단위, 30~360분 범위로 정규화한다."""
+    try:
+        minutes = int(str(raw).strip())
+    except ValueError:
+        return 30
+    return min(360, max(30, minutes // 30 * 30))
+
+
 def _read_version() -> str:
     """CHANGELOG.md의 첫 번째 ## [vX.Y.Z] 항목에서 버전을 읽어온다."""
     import re
@@ -157,6 +166,8 @@ class Config:
     PLAYBACK_VERIFY_ENABLED: str = "true"
     # 자동 모드가 한 강의를 재시도할 최대 횟수. 초과하면 pending에서 제외한다. "0"=무제한.
     AUTO_MAX_RETRY_PER_LECTURE: str = "3"
+    SESSION_CHECK_ENABLED: str = "true"
+    SESSION_CHECK_INTERVAL_MINUTES: str = "30"
 
     @classmethod
     def load(cls) -> None:
@@ -210,6 +221,8 @@ class Config:
         cls.AUTO_SCHEDULE_HOURS = db.get("AUTO_SCHEDULE_HOURS", "")
         cls.PLAYBACK_VERIFY_ENABLED = db.get("PLAYBACK_VERIFY_ENABLED", "true")
         cls.AUTO_MAX_RETRY_PER_LECTURE = db.get("AUTO_MAX_RETRY_PER_LECTURE", "3")
+        cls.SESSION_CHECK_ENABLED = db.get("SESSION_CHECK_ENABLED", "true")
+        cls.SESSION_CHECK_INTERVAL_MINUTES = db.get("SESSION_CHECK_INTERVAL_MINUTES", "30")
 
     @classmethod
     def get_ai_api_key(cls, agent: str | None = None) -> str:
@@ -304,6 +317,11 @@ class Config:
         if not raw.isdigit():
             return 3
         return int(raw)
+
+    @classmethod
+    def get_session_check_interval_minutes(cls) -> int:
+        """세션 주기 점검 간격(분). 30분 단위로 내림하고 30~360분으로 제한, 비정수는 30."""
+        return normalize_session_check_interval(cls.SESSION_CHECK_INTERVAL_MINUTES)
 
     @classmethod
     def set_session_credentials(cls, user_id: str, password: str) -> None:

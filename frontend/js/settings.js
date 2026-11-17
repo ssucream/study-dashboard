@@ -65,6 +65,34 @@ async function loadAiModelCatalog() {
   });
 }
 
+// 세션 점검 주기: 시간(0~6) + 분(00/30) 드롭다운 ↔ 분 단위 값(30~360)
+function syncSessionCheckSelects() {
+  const hours = $('#session-check-hours');
+  const minutes = $('#session-check-minutes');
+  if (!hours || !minutes) return;
+  const h = Number(hours.value);
+  const [opt0, opt30] = minutes.options;
+  opt0.disabled = h === 0;   // 최소 00시간 30분
+  opt30.disabled = h === 6;  // 최대 06시간 00분
+  if (h === 0) minutes.value = '30';
+  if (h === 6) minutes.value = '0';
+}
+
+function setSessionCheckInterval(totalMinutes) {
+  const m = Math.min(360, Math.max(30, Math.floor((Number(totalMinutes) || 30) / 30) * 30));
+  $('#session-check-hours').value = String(Math.floor(m / 60));
+  $('#session-check-minutes').value = String(m % 60);
+  syncSessionCheckSelects();
+}
+
+function getSessionCheckInterval() {
+  return Number($('#session-check-hours').value) * 60 + Number($('#session-check-minutes').value);
+}
+
+function applySessionCheckVisibility(form = $('#settings-form')) {
+  $('#session-check-interval-row')?.classList.toggle('hidden', !form?.elements.SESSION_CHECK_ENABLED?.checked);
+}
+
 function applyAiAgentVisibility(form = $('#settings-form')) {
   if (!form) return;
   const agent = form.elements.AI_AGENT?.value || state.settings.AI_AGENT || 'gemini';
@@ -191,6 +219,8 @@ export async function loadSettings() {
     applySettingsVisibility(form);
     applyTelegramVisibility(form);
     updateSsuModelHint();
+    setSessionCheckInterval(s.SESSION_CHECK_INTERVAL_MINUTES);
+    applySessionCheckVisibility(form);
     // 리사이즈는 섹션 표시 여부가 확정된 뒤 실행해야 scrollHeight가 올바르게 계산된다.
     requestAnimationFrame(() => {
       if (prompt) autoResizeTextarea(prompt);
@@ -250,6 +280,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
 
   // 마감 알림 발송 시점: 프리셋 체크박스 → CSV. 항상 전송(빈 값이면 백엔드가 기본값 사용).
   payload.TELEGRAM_DEADLINE_THRESHOLDS = serializeDeadlineThresholds();
+  payload.SESSION_CHECK_INTERVAL_MINUTES = String(getSessionCheckInterval());
 
   try {
     await api('PUT', '/api/settings', payload);
@@ -258,7 +289,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
     applyTelegramVisibility(form);
     const msg = $('#settings-success');
     msg.classList.remove('hidden');
-    setTimeout(() => msg.classList.add('hidden'), 3000);
+    clearTimeout(msg._hideTimer);
+    msg._hideTimer = setTimeout(() => msg.classList.add('hidden'), 3000);
   } catch (err) {
     alert(`저장 실패: ${err.message}`);
   }
@@ -275,6 +307,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
 });
 
 $('#settings-form').elements.SSU_MODEL?.addEventListener('input', updateSsuModelHint);
+$('#settings-form').elements.SESSION_CHECK_ENABLED?.addEventListener('change', () => applySessionCheckVisibility());
+$('#session-check-hours')?.addEventListener('change', syncSessionCheckSelects);
 
 $('#btn-telegram-test')?.addEventListener('click', async () => {
   const btn = $('#btn-telegram-test');

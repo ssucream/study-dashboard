@@ -71,3 +71,69 @@ async def force_logout_on_session_loss(scraper) -> None:
                 Config.TELEGRAM_BOT_TOKEN,
                 Config.TELEGRAM_CHAT_ID,
             )
+
+
+# 세션 상태 주기 점검. 이게 없으면 아무도 LMS에 접근하지 않는 동안(자동 모드 꺼짐·사용자 미접속)
+# 세션이 만료돼도 다음 웹 접속 때에야 감지되어 텔레그램 알림이 늦게 온다.
+# 부수 효과로 주기적 접속이 LMS 세션을 살려두는 keepalive 역할도 한다.
+# 간격·ON/OFF는 설정(SESSION_CHECK_*)에서 읽고, 설정 변경이 1분 안에 반영되도록 1분마다 깨어난다.
+_WATCHDOG_TICK_SECONDS = 60
+
+
+async def check_session_once() -> None:
+    """현재 로그인 세션이 살아있는지 확인하고, 복구할 수 없게 만료됐으면 강제 로그아웃·알림한다."""
+    from backend.api.state import scraper_lock
+
+    from src.auth.login import _needs_login, ensure_logged_in
+    from src.scraper.course_scraper import _DASHBOARD_URL
+
+    scraper = app_state.scraper
+    # 스크래핑·브라우저 재시작 중이면 세션을 이미 쓰고 있으므로 이번 회차는 건너뛴다
+    if scraper is None or scraper_lock.locked():
+        return
+
+    expired = False
+    async with scraper_lock:
+        if app_state.scraper is not scraper:
+            return
+        page = await scraper.new_page()
+        try:
+            await page.goto(_DASHBOARD_URL, wait_until="domcontentloaded", timeout=30_000)
+            if not await _needs_login(page):
+                from backend.api.routes.auto import _snapshot_session
+
+                await _snapshot_session()
+                return
+            if scraper.username and scraper.password:
+                # 학번/비밀번호가 메모리에 있으면 재로그인으로 회복. 실패는 SSO 장애일 수 있어 다음 회차에 재시도
+                if not await ensure_logged_in(page, scraper.username, scraper.password):
+                    logger.warning("세션 점검: 자동 재로그인 실패 — 다음 점검에서 재시도")
+                return
+            expired = True
+        finally:
+            await scraper.close_page(page)
+
+    if expired:
+        await force_logout_on_session_loss(scraper)
+
+
+async def session_watchdog_loop(tick: float = _WATCHDOG_TICK_SECONDS) -> None:
+    from src.config import Config
+
+    loop = asyncio.get_running_loop()
+    last_check = loop.time()
+    while True:
+        await asyncio.sleep(tick)
+        if Config.SESSION_CHECK_ENABLED != "true":
+            last_check = loop.time()
+            continue
+        if loop.time() - last_check < Config.get_session_check_interval_minutes() * 60:
+            continue
+        last_check = loop.time()
+        try:
+            await check_session_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # 네트워크 오류 등 일시적 실패는 로그아웃시키지 않는다
+            logger.warning("세션 점검 실패 (다음 점검에서 재시도): %s", e)

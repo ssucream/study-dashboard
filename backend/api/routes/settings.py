@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src import db, event_log
-from src.config import Config, normalize_download_rule, parse_deadline_thresholds
+from src.config import Config, normalize_download_rule, normalize_session_check_interval, parse_deadline_thresholds
 from src.crypto import encrypt
 from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog, ssu_model_tier
 
@@ -36,6 +36,8 @@ async def get_settings():
     return {
         "PLAYBACK_VERIFY_ENABLED": Config.PLAYBACK_VERIFY_ENABLED,
         "AUTO_MAX_RETRY_PER_LECTURE": str(Config.get_auto_max_retry()),
+        "SESSION_CHECK_ENABLED": Config.SESSION_CHECK_ENABLED,
+        "SESSION_CHECK_INTERVAL_MINUTES": str(Config.get_session_check_interval_minutes()),
         "DOWNLOAD_ENABLED": Config.DOWNLOAD_ENABLED,
         "DOWNLOAD_DIR": Config.get_download_dir(),
         "DOWNLOAD_RULE": Config.get_download_rule(),
@@ -74,6 +76,8 @@ async def get_settings():
 class SettingsUpdate(BaseModel):
     PLAYBACK_VERIFY_ENABLED: str | None = None
     AUTO_MAX_RETRY_PER_LECTURE: str | None = None
+    SESSION_CHECK_ENABLED: str | None = None
+    SESSION_CHECK_INTERVAL_MINUTES: str | None = None
     DOWNLOAD_ENABLED: str | None = None
     DOWNLOAD_RULE: str | None = None
     AUTO_DOWNLOAD_AFTER_PLAY: str | None = None
@@ -137,6 +141,8 @@ async def update_settings(body: SettingsUpdate):
         elif key == "AUTO_MAX_RETRY_PER_LECTURE":
             # 비정수/음수는 기본값 3으로 정규화 (0은 무제한이므로 그대로 둔다)
             val = val.strip() if val.strip().isdigit() else "3"
+        elif key == "SESSION_CHECK_INTERVAL_MINUTES":
+            val = str(normalize_session_check_interval(val))
         elif key == "SSU_MODEL" and ssu_model_tier(val)[0] == "unsuitable":
             raise HTTPException(status_code=400, detail=f"{val}: {ssu_model_tier(val)[1]}")
         to_save[key] = encrypt(val) if key in _SENSITIVE and val else val
