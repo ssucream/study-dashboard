@@ -29,11 +29,13 @@ _AGENT_KEY_ATTR = {
     "gemini": "GOOGLE_API_KEY",
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "ssu": "SSU_API_KEY",
 }
 _AGENT_MODEL_ATTR = {
     "gemini": "GEMINI_MODEL",
     "openai": "OPENAI_MODEL",
     "openrouter": "OPENROUTER_MODEL",
+    "ssu": "SSU_MODEL",
 }
 
 
@@ -115,6 +117,7 @@ class Config:
     GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
+    SSU_API_KEY: str = ""
     WHISPER_MODEL: str = "base"
     STT_LANGUAGE: str = "ko"
     STT_DELETE_AUDIO_AFTER_TRANSCRIBE: str = ""
@@ -128,6 +131,7 @@ class Config:
     GEMINI_MODEL: str = ""
     OPENAI_MODEL: str = ""
     OPENROUTER_MODEL: str = ""
+    SSU_MODEL: str = ""
     SUMMARY_PROMPT_TEMPLATE: str = ""
     SUMMARY_PROMPT_EXTRA: str = ""
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: str = ""
@@ -166,6 +170,7 @@ class Config:
         cls.GOOGLE_API_KEY = _load_credential("GOOGLE_API_KEY")
         cls.OPENAI_API_KEY = _load_credential("OPENAI_API_KEY")
         cls.OPENROUTER_API_KEY = _load_credential("OPENROUTER_API_KEY")
+        cls.SSU_API_KEY = _load_credential("SSU_API_KEY")
         cls.TELEGRAM_BOT_TOKEN = _load_credential("TELEGRAM_BOT_TOKEN")
         cls.WHISPER_MODEL = db.get("WHISPER_MODEL", "base")
         cls.STT_LANGUAGE = db.get("STT_LANGUAGE", "ko")
@@ -185,6 +190,7 @@ class Config:
         cls.GEMINI_MODEL = db.get("GEMINI_MODEL", "")
         cls.OPENAI_MODEL = db.get("OPENAI_MODEL", "")
         cls.OPENROUTER_MODEL = db.get("OPENROUTER_MODEL", "")
+        cls.SSU_MODEL = db.get("SSU_MODEL", "")
         cls.SUMMARY_PROMPT_TEMPLATE = db.get("SUMMARY_PROMPT_TEMPLATE", _default_summary_prompt())
         cls.SUMMARY_PROMPT_EXTRA = db.get("SUMMARY_PROMPT_EXTRA", "")
         cls.CHAPEL_SUMMARY_ENABLED = db.get("CHAPEL_SUMMARY_ENABLED", "true")

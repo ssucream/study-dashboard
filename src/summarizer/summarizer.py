@@ -129,11 +129,105 @@ OPENROUTER_MODEL_IDS = [m[0] for m in _OPENROUTER_MODELS]
 OPENROUTER_MODEL_LABELS = [m[1] for m in _OPENROUTER_MODELS]
 OPENROUTER_DEFAULT_MODEL = OPENROUTER_MODEL_IDS[0]
 
+# 숭실대 API Gateway (mindlogic) — OpenAI 호환. 실제 목록은 키로 /models/를 조회하고, 실패 시 아래 목록을 쓴다.
+SSU_BASE_URL = "https://factchat-cloud.mindlogic.ai/v1/gateway"
+_SSU_MODELS = [
+    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+    ("gpt-6-luna", "GPT-6 Luna"),
+    ("claude-haiku-5-5", "Claude Haiku 5.5"),
+    ("gemini-3.8-flash", "Gemini 3.8 Flash"),
+    ("solar-mini4", "Solar Mini 4  (한국어 특화)"),
+]
+
+# 요약·예상문제용 등급. 게이트웨이 /models/에는 가격 필드가 없어 모델 계열명으로 분류한다(2026-11 문서 기준).
+# shortcut: 이름 규칙 기반 분류 — 게이트웨이가 가격/등급 필드를 제공하면 그 값으로 교체할 것.
+SSU_RECOMMENDED = {model_id for model_id, _ in _SSU_MODELS}
+_SSU_LEGACY = {
+    "claude-opus-4-6": "claude-opus-4-8",
+    "claude-opus-4-7": "claude-opus-5",
+    "claude-sonnet-4-6": "claude-sonnet-5",
+    "gpt-5.6-sol": "gpt-6.1-sol",
+    "gpt-5.6-terra": "gpt-6.1-terra",
+    "gpt-5.6-luna": "gpt-6-luna",
+    "gpt-5.1": "gpt-6-luna",
+    "gpt-5.2": "gpt-6.1-terra",
+    "gpt-5.2-pro": "",
+    "gpt-5.4": "gpt-6.1-terra",
+    "gpt-5.4-mini": "gpt-6-luna",
+    "gpt-5.4-nano": "gpt-6-luna",
+    "gpt-5.4-pro": "",
+    "gemini-3.1-flash-lite": "gemini-3.5-flash-lite",
+    "solar-pro3": "solar-pro4",
+    "google/gemma-3-27b-it": "google/gemma-4-31B-it",
+}
+_SSU_EXPENSIVE_MARKERS = ("opus", "fable", "-pro", "-sol", "-max", "astra")
+# 텍스트 요약에 쓸 수 없는 모델: 웹검색 전용·오디오·codex(Responses 전용)·이미지·영상·임베딩·리랭크·실시간 등
+# 목록 드롭다운은 type=llm으로 걸러지므로, 이 표지는 모델 ID를 직접 입력한 경우의 저장 거부용이다.
+_SSU_UNSUITABLE_MARKERS = (
+    "sonar",
+    "gpt-audio",
+    "codex",
+    "-tts",
+    "stt-",
+    "lyria",
+    "elevenlabs",
+    "image",
+    "imagine",
+    "nano-banana",
+    "video",
+    "seedance",
+    "kling",
+    "omni",
+    "wan3",
+    "happyhorse",
+    "ideogram",
+    "fal-ai/",
+    "bytedance/",
+    "minimax/",
+    "lightricks/",
+    "embedding",
+    "rerank",
+    "decisions",
+    "jev-",
+    "realtime",
+    "-live",
+)
+_SSU_TIER_ORDER = {"recommended": 0, "standard": 1, "expensive": 2, "legacy": 3}
+
+
+def ssu_model_tier(model_id: str) -> tuple[str, str]:
+    """숭실대 게이트웨이 모델의 (등급, 안내 문구). 등급: recommended/standard/expensive/legacy/unsuitable."""
+    mid = model_id.lower()
+    if any(m in mid for m in _SSU_UNSUITABLE_MARKERS):
+        return "unsuitable", "텍스트 요약에 쓸 수 없는 모델 (웹검색·이미지·영상·오디오·임베딩 등 전용)"
+    if model_id in _SSU_LEGACY:
+        repl = _SSU_LEGACY[model_id]
+        return "legacy", f"레거시 모델 — {repl} 사용 권장" if repl else "레거시 모델 — 곧 종료될 수 있음"
+    if model_id in SSU_RECOMMENDED:
+        return "recommended", "요약·예상문제에 적합하고 크레딧 소모가 적음"
+    if any(m in mid for m in _SSU_EXPENSIVE_MARKERS):
+        return "expensive", "상위 등급 모델 — 강의 요약에는 과하고 크레딧 소모가 큼"
+    return "standard", ""
+
+
+_SSU_TIER_PREFIX = {"recommended": "⭐ 추천 · ", "expensive": "💸 고비용 · ", "legacy": "⚠️ 레거시 · "}
+
+
+def _ssu_catalog_entry(model_id: str, name: str) -> dict[str, str]:
+    tier, note = ssu_model_tier(model_id)
+    return {"id": model_id, "name": _SSU_TIER_PREFIX.get(tier, "") + name, "tier": tier, "note": note}
+
+
+SSU_MODEL_IDS = [m[0] for m in _SSU_MODELS]
+SSU_MODEL_LABELS = [m[1] for m in _SSU_MODELS]
+SSU_DEFAULT_MODEL = SSU_MODEL_IDS[0]
+
 # 설정 화면에서 provider 드롭다운 구성에 사용 (agent id, 표시 라벨, 모델 id 목록, 모델 라벨 목록, 기본 모델)
 AI_AGENTS = [
     ("gemini", "Google Gemini", GEMINI_MODEL_IDS, GEMINI_MODEL_LABELS, GEMINI_DEFAULT_MODEL),
     ("openai", "OpenAI", OPENAI_MODEL_IDS, OPENAI_MODEL_LABELS, OPENAI_DEFAULT_MODEL),
     ("openrouter", "OpenRouter", OPENROUTER_MODEL_IDS, OPENROUTER_MODEL_LABELS, OPENROUTER_DEFAULT_MODEL),
+    ("ssu", "숭실대 API Gateway", SSU_MODEL_IDS, SSU_MODEL_LABELS, SSU_DEFAULT_MODEL),
 ]
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
@@ -145,6 +239,8 @@ def get_model_catalog(agent: str, api_key: str = "") -> tuple[list[dict[str, str
         return [{"id": model_id, "name": label} for model_id, label in _GEMINI_MODELS], "curated"
     if agent == "openai":
         return [{"id": model_id, "name": label} for model_id, label in _OPENAI_MODELS], "curated"
+    if agent == "ssu":
+        return _get_ssu_model_catalog(api_key)
     if agent != "openrouter":
         raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
 
@@ -172,6 +268,38 @@ def get_model_catalog(agent: str, api_key: str = "") -> tuple[list[dict[str, str
     return fallback, "fallback"
 
 
+def _get_ssu_model_catalog(api_key: str) -> tuple[list[dict[str, str]], str]:
+    fallback = [_ssu_catalog_entry(model_id, label) for model_id, label in _SSU_MODELS]
+    if not api_key:
+        return fallback, "fallback"
+    try:
+        response = requests.get(
+            f"{SSU_BASE_URL}/models/",
+            params={"type": "llm"},
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        # shortcut: 응답 스키마 문서 미확인 — OpenAI 형식({"data": [...]})과 배열 둘 다 허용
+        items = payload.get("data", []) if isinstance(payload, dict) else payload
+        catalog = []
+        for item in items or []:
+            model_id = str((item or {}).get("id") or "").strip() if isinstance(item, dict) else ""
+            if not model_id or model_id in {m["id"] for m in catalog}:
+                continue
+            # 이미지·임베딩 등 비텍스트 모델과 요약 불가 모델은 목록에서 아예 뺀다
+            if item.get("type", "llm") != "llm" or ssu_model_tier(model_id)[0] == "unsuitable":
+                continue
+            catalog.append(_ssu_catalog_entry(model_id, str(item.get("name") or model_id)))
+        if catalog:
+            catalog.sort(key=lambda m: _SSU_TIER_ORDER[m["tier"]])
+            return catalog, "ssu-user"
+    except (requests.RequestException, TypeError, ValueError, AttributeError):
+        pass
+    return fallback, "fallback"
+
+
 def summarize(
     txt_path: Path,
     agent: str,
@@ -188,7 +316,7 @@ def summarize(
 
     Args:
         txt_path:     STT 결과 .txt 파일 경로
-        agent:        "gemini" / "openai" / "openrouter"
+        agent:        "gemini" / "openai" / "openrouter" / "ssu"
         api_key:      agent에 해당하는 API 키
         model:        사용할 모델 ID
         extra_prompt: 사용자 추가 지시사항 (기본 프롬프트 뒤에 추가)
@@ -230,6 +358,10 @@ def generate_text(agent: str, api_key: str, model: str, prompt: str) -> str:
         return _summarize_openai(api_key, model, prompt)
     if agent == "openrouter":
         return _summarize_openrouter(api_key, model, prompt)
+    if agent == "ssu":
+        return _summarize_openai_compatible(
+            api_key, model, prompt, base_url=SSU_BASE_URL, provider_label="숭실대 API Gateway"
+        )
     raise ValueError(f"지원하지 않는 AI 에이전트: {agent}")
 
 

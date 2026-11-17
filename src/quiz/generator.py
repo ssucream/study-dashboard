@@ -1,6 +1,6 @@
 """강의 자료 컨텍스트로부터 예상 문제를 생성한다.
 
-AI 호출은 summarizer.generate_text()(gemini/openai/openrouter 분기)를 재사용한다.
+AI 호출은 summarizer.generate_text()(gemini/openai/openrouter/ssu 분기)를 재사용한다.
 요약 파이프라인과 달리 응답을 채점 가능한 구조로 강제해야 하므로, JSON 스키마를
 프롬프트에 명시하고 파싱 실패 시 1회 재시도한다.
 """

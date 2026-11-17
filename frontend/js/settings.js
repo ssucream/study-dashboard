@@ -14,10 +14,35 @@ const AI_MODEL_DEFAULTS = {
   GEMINI_MODEL: 'gemini-3.5-flash-lite',
   OPENAI_MODEL: 'gpt-5.6-luna',
   OPENROUTER_MODEL: 'openrouter/auto',
+  SSU_MODEL: 'gemini-3.5-flash-lite',
 };
+
+// 숭실대 게이트웨이 모델 등급(tier/note) 조회용 — 크레딧 과소모·부적합 모델 선택 경고에 사용
+let ssuModels = new Map();
+const SSU_HINT_CLASS = {
+  recommended: 'text-emerald-400',
+  expensive: 'text-amber-400',
+  legacy: 'text-amber-400',
+  unknown: 'text-slate-400',
+};
+
+function ssuModelInfo(modelId) {
+  return ssuModels.get(modelId) || { tier: 'unknown', note: '목록에 없는 모델 ID — 요약용 텍스트 모델인지, 크레딧 소모가 큰지 확인하세요' };
+}
+
+function updateSsuModelHint() {
+  const input = $('#settings-form')?.elements.SSU_MODEL;
+  const hint = $('#ssu-model-hint');
+  if (!input || !hint) return;
+  const modelId = input.value.trim();
+  const info = modelId ? ssuModelInfo(modelId) : null;
+  hint.className = `text-xs ${info?.note ? SSU_HINT_CLASS[info.tier] || 'text-slate-400' : 'hidden'}`;
+  hint.textContent = info?.note || '';
+}
 
 async function loadAiModelCatalog() {
   const catalog = await api('GET', '/api/settings/ai-models', null, 15000);
+  ssuModels = new Map((catalog.providers?.ssu?.models || []).map(m => [m.id, m]));
   Object.entries(catalog.providers || {}).forEach(([agent, provider]) => {
     const list = $(`#${agent}-model-list`);
     if (!list) return;
@@ -32,7 +57,11 @@ async function loadAiModelCatalog() {
     const count = provider.models?.length || 0;
     status.textContent = agent === 'openrouter'
       ? `OpenRouter 사용 가능 텍스트 모델 ${count}개 · 모델 ID 직접 입력 가능`
-      : `2026년 8월 기준 ${count}개 · 모델 ID 직접 입력 가능`;
+      : agent === 'ssu'
+        ? (provider.source === 'ssu-user'
+          ? `숭실대 API 사용 가능 모델 ${count}개 · ⭐ 추천 모델부터 표시 · 💸 고비용 모델은 요약에 비권장`
+          : `추천 모델 ${count}개 (API 키 저장 후 실제 목록 조회) · 모델 ID 직접 입력 가능`)
+        : `2026년 8월 기준 ${count}개 · 모델 ID 직접 입력 가능`;
   });
 }
 
@@ -161,6 +190,7 @@ export async function loadSettings() {
 
     applySettingsVisibility(form);
     applyTelegramVisibility(form);
+    updateSsuModelHint();
     // 리사이즈는 섹션 표시 여부가 확정된 뒤 실행해야 scrollHeight가 올바르게 계산된다.
     requestAnimationFrame(() => {
       if (prompt) autoResizeTextarea(prompt);
@@ -212,6 +242,12 @@ $('#settings-form').addEventListener('submit', async (e) => {
     payload.SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE = 'false';
   }
 
+  if (payload.AI_AGENT === 'ssu' && payload.AI_ENABLED === 'true' && payload.SSU_MODEL) {
+    const { tier, note } = ssuModelInfo(payload.SSU_MODEL);
+    if (['expensive', 'legacy', 'unknown'].includes(tier)
+      && !confirm(`${payload.SSU_MODEL}: ${note}\n\n그래도 이 모델로 저장할까요?`)) return;
+  }
+
   // 마감 알림 발송 시점: 프리셋 체크박스 → CSV. 항상 전송(빈 값이면 백엔드가 기본값 사용).
   payload.TELEGRAM_DEADLINE_THRESHOLDS = serializeDeadlineThresholds();
 
@@ -237,6 +273,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
   const el = $('#settings-form').elements[name];
   if (el) el.addEventListener('change', () => applyTelegramVisibility());
 });
+
+$('#settings-form').elements.SSU_MODEL?.addEventListener('input', updateSsuModelHint);
 
 $('#btn-telegram-test')?.addEventListener('click', async () => {
   const btn = $('#btn-telegram-test');

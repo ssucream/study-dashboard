@@ -6,11 +6,11 @@ from pydantic import BaseModel
 from src import db, event_log
 from src.config import Config, normalize_download_rule, parse_deadline_thresholds
 from src.crypto import encrypt
-from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog
+from src.summarizer.summarizer import DEFAULT_SUMMARY_PROMPT, get_model_catalog, ssu_model_tier
 
 router = APIRouter()
 
-_SENSITIVE = {"GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"}
+_SENSITIVE = {"GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "SSU_API_KEY", "TELEGRAM_BOT_TOKEN"}
 
 
 @router.get("/ai-models")
@@ -25,6 +25,8 @@ async def get_ai_models():
         providers[agent] = {"models": models, "source": source}
     models, source = await asyncio.to_thread(get_model_catalog, "openrouter", Config.OPENROUTER_API_KEY or "")
     providers["openrouter"] = {"models": models, "source": source}
+    models, source = await asyncio.to_thread(get_model_catalog, "ssu", Config.SSU_API_KEY or "")
+    providers["ssu"] = {"models": models, "source": source}
     return {"as_of": "2026-08", "providers": providers}
 
 
@@ -50,6 +52,8 @@ async def get_settings():
         "HAS_OPENAI_API_KEY": bool(Config.OPENAI_API_KEY),
         "OPENROUTER_MODEL": Config.OPENROUTER_MODEL,
         "HAS_OPENROUTER_API_KEY": bool(Config.OPENROUTER_API_KEY),
+        "SSU_MODEL": Config.SSU_MODEL,
+        "HAS_SSU_API_KEY": bool(Config.SSU_API_KEY),
         "SUMMARY_PROMPT_TEMPLATE": Config.get_summary_prompt_template(),
         "SUMMARY_PROMPT_DEFAULT": DEFAULT_SUMMARY_PROMPT,
         "SUMMARY_PROMPT_EXTRA": Config.SUMMARY_PROMPT_EXTRA,
@@ -85,6 +89,8 @@ class SettingsUpdate(BaseModel):
     OPENAI_API_KEY: str | None = None
     OPENROUTER_MODEL: str | None = None
     OPENROUTER_API_KEY: str | None = None
+    SSU_MODEL: str | None = None
+    SSU_API_KEY: str | None = None
     SUMMARY_PROMPT_TEMPLATE: str | None = None
     SUMMARY_PROMPT_EXTRA: str | None = None
     SUMMARY_DELETE_TEXT_AFTER_SUMMARIZE: str | None = None
@@ -131,6 +137,8 @@ async def update_settings(body: SettingsUpdate):
         elif key == "AUTO_MAX_RETRY_PER_LECTURE":
             # 비정수/음수는 기본값 3으로 정규화 (0은 무제한이므로 그대로 둔다)
             val = val.strip() if val.strip().isdigit() else "3"
+        elif key == "SSU_MODEL" and ssu_model_tier(val)[0] == "unsuitable":
+            raise HTTPException(status_code=400, detail=f"{val}: {ssu_model_tier(val)[1]}")
         to_save[key] = encrypt(val) if key in _SENSITIVE and val else val
 
     download_enabled = to_save.get("DOWNLOAD_ENABLED", Config.DOWNLOAD_ENABLED) == "true"

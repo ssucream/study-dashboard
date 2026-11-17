@@ -44,7 +44,7 @@ torch는 `pyproject.toml`에 포함하지 않음 — Dockerfile에서 CPU wheel�
 ## 설계 의도
 
 - **STT 엔진**: faster-whisper (CTranslate2 기반, torch 불필요). base 모델이 기본값.
-- **요약 엔진**: Gemini / OpenAI / OpenRouter API 중 선택 (provider: `AI_AGENT`). 키는 DB에서 암호화 로드.
+- **요약 엔진**: Gemini / OpenAI / OpenRouter / 숭실대 API Gateway(`ssu`, OpenAI 호환 `factchat-cloud.mindlogic.ai/v1/gateway`) 중 선택 (provider: `AI_AGENT`). 키는 DB에서 암호화 로드.
 - **설정 저장소**: SQLite (`db/app.db`) — `crypto.py`로 민감값 암호화 후 저장.
 - **다운로드 경로**: 컨테이너 내 `/downloads` — 기본 compose에서 호스트 `./downloads`를 마운트.
 - **출력 파일**: mp4(영상), mp3(음성, ffmpeg 변환), txt(STT 결과), `_summarized.txt`(요약).
@@ -134,7 +134,7 @@ study-dashboard/
 │   │   └── video_downloader.py           # 영상 URL 추출 + HTTP 스트리밍 다운로드
 │   ├── converter/audio_converter.py      # mp4 → mp3 (ffmpeg)
 │   ├── stt/transcriber.py                # faster-whisper STT
-│   ├── summarizer/summarizer.py          # Gemini/OpenAI/OpenRouter 요약 + generate_text() 공용 진입점
+│   ├── summarizer/summarizer.py          # Gemini/OpenAI/OpenRouter/숭실대 요약 + generate_text() 공용 진입점
 │   ├── quiz/                             # 예상 문제 생성·채점
 │   │   ├── materials.py                  # PDF/PPTX/DOCX 텍스트 추출
 │   │   ├── material_store.py             # 업로드 강의자료 파일 저장/조회
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 ```
 
 민감 키 목록 (저장 시 반드시 `encrypt()` 적용):
-`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN`, `LMS_SESSION_STATE`
+`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `SSU_API_KEY`, `TELEGRAM_BOT_TOKEN`, `LMS_SESSION_STATE`
 (로그인 세션 쿠키 — 자동 모드 무인 재개용. 학번/비밀번호 자체는 여전히 저장하지 않는다)
 
 ## 설정 항목
@@ -229,13 +229,15 @@ CREATE TABLE IF NOT EXISTS playback_attempts (
 | `STT_LANGUAGE` | STT 언어 | `ko` / `en` / `` (자동) |
 | `WHISPER_MODEL` | faster-whisper 모델 | `tiny` / `base` / `small` / `medium` / `large` |
 | `AI_ENABLED` | AI 요약 사용 여부 | `true` / `false` |
-| `AI_AGENT` | AI 요약 provider | `gemini` / `openai` / `openrouter` |
+| `AI_AGENT` | AI 요약 provider | `gemini` / `openai` / `openrouter` / `ssu` |
 | `GEMINI_MODEL` | Gemini 모델 ID | `gemini-3.5-flash-lite` |
 | `GOOGLE_API_KEY` | Gemini API 키 (암호화) | — |
 | `OPENAI_MODEL` | OpenAI 모델 ID | `gpt-5.6-luna` |
 | `OPENAI_API_KEY` | OpenAI API 키 (암호화) | — |
 | `OPENROUTER_MODEL` | OpenRouter 모델 ID | `openrouter/auto` |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 (암호화) | — |
+| `SSU_MODEL` | 숭실대 API Gateway 모델 ID. 등급(추천/고비용/레거시/부적합)은 `summarizer.ssu_model_tier()`가 판정, 부적합은 저장 거부 | `gemini-3.5-flash-lite` |
+| `SSU_API_KEY` | 숭실대 API Gateway 키 (암호화, BAZE에서 발급) | — |
 | `SUMMARY_PROMPT_EXTRA` | 요약 프롬프트 추가 지시 (기본 형식 뒤에 덧붙음) | — |
 | `CHAPEL_SUMMARY_ENABLED` | 채플 과목 요약에 [강연자 소개]/[성경 말씀] 섹션 자동 추가 | `true` / `false` |
 | `TELEGRAM_ENABLED` | 텔레그램 알림 사용 여부 | `true` / `false` |

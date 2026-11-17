@@ -741,6 +741,7 @@
                   <option value="gemini">Google Gemini</option>
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
+                  <option value="ssu">숭실대 API Gateway</option>
                 </select>
               </div>
 
@@ -784,6 +785,22 @@
                 <label class="text-xs text-slate-400">OpenRouter API Key</label>
                 <input type="password" name="OPENROUTER_API_KEY" placeholder="저장된 경우 변경 시에만 입력"
                   class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+
+              <div class="flex flex-col gap-2" data-agent-group="ssu">
+                <label class="text-xs text-slate-400">숭실대 API Gateway 모델</label>
+                <input type="text" name="SSU_MODEL" list="ssu-model-list" autocomplete="off"
+                  placeholder="모델 ID 검색 또는 직접 입력"
+                  class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
+                <datalist id="ssu-model-list"></datalist>
+                <p class="text-xs text-slate-500" data-model-status="ssu">숭실대 API 모델 목록을 불러오는 중...</p>
+                <p class="text-xs hidden" id="ssu-model-hint"></p>
+              </div>
+              <div class="flex flex-col gap-2" data-agent-group="ssu">
+                <label class="text-xs text-slate-400">숭실대 API Key</label>
+                <input type="password" name="SSU_API_KEY" placeholder="저장된 경우 변경 시에만 입력"
+                  class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:border-indigo-500 transition-colors" />
+                <p class="text-xs text-slate-500">BAZE 사이트 좌측 하단 "API Gateway" → "API 키 생성"에서 발급. 사용량은 키 소유자 크레딧에서 차감됩니다.</p>
               </div>
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-3">

@@ -1308,7 +1308,7 @@ $('#btn-refresh-logs').addEventListener('click', () => loadLogs());
 function _checkSettingsBanner(settings) {
   const s = settings || state.settings;
   const missing = [];
-  const hasAiKey = { gemini: s.HAS_GOOGLE_API_KEY, openai: s.HAS_OPENAI_API_KEY, openrouter: s.HAS_OPENROUTER_API_KEY }[s.AI_AGENT || 'gemini'];
+  const hasAiKey = { gemini: s.HAS_GOOGLE_API_KEY, openai: s.HAS_OPENAI_API_KEY, openrouter: s.HAS_OPENROUTER_API_KEY, ssu: s.HAS_SSU_API_KEY }[s.AI_AGENT || 'gemini'];
   if (s.AI_ENABLED === 'true' && !hasAiKey) missing.push('AI 요약 API 키 미설정');
   if (s.TELEGRAM_ENABLED === 'true' && !s.HAS_TELEGRAM_BOT_TOKEN) missing.push('텔레그램 봇 토큰 미설정');
   const banner = $('#settings-banner');

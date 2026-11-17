@@ -26,6 +26,7 @@ export const state = {
     GEMINI_MODEL: '',
     OPENAI_MODEL: '',
     OPENROUTER_MODEL: '',
+    SSU_MODEL: '',
     SUMMARY_PROMPT_TEMPLATE: '',
     SUMMARY_PROMPT_DEFAULT: '',
     SUMMARY_PROMPT_EXTRA: '',

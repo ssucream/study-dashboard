@@ -314,3 +314,13 @@ async def test_get_ai_models_returns_curated_and_live_catalogs(monkeypatch):
     assert payload["providers"]["gemini"]["models"][0]["id"] == "gemini/latest"
     assert payload["providers"]["openrouter"]["models"][0]["id"] == "openrouter/latest"
     assert payload["providers"]["openrouter"]["source"] == "live"
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_unsuitable_ssu_model(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+
+    _make_db(tmp_path, monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        await settings_route.update_settings(settings_route.SettingsUpdate(SSU_MODEL="sonar-pro"))
+    assert exc.value.status_code == 400
