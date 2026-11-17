@@ -2,6 +2,38 @@
 
 버전 형식: `연도.메이저.마이너` (메이저: 새 기능 추가, 마이너: 버그 수정·내부 변경) — v26.7.0부터 적용. 이전에는 `연도.월.버전` 형식이었음.
 
+## [v26.12.0] - 2026-11-17
+
+### Added
+
+- **숭실대 API Gateway를 AI 제공자로 추가**: 설정의 AI 모델에서 "숭실대 API Gateway"를 고르고
+  BAZE 사이트(좌측 하단 "API Gateway" → "API 키 생성")에서 발급한 키를 넣으면 요약·예상
+  문제 생성·채점을 학교 제공 API로 실행한다. OpenAI 호환 엔드포인트
+  (`https://factchat-cloud.mindlogic.ai/v1/gateway`)라 기존 OpenAI/OpenRouter와 같은 호출
+  경로를 쓴다. 키는 `SSU_API_KEY`로 암호화 저장되고, 사용량은 키 소유자 크레딧에서 차감된다
+  (`src/summarizer/summarizer.py`, `src/config.py`, `backend/api/routes/settings.py`)
+- **숭실대 API 추천 모델 표시와 부적합 모델 차단**: 키를 저장하면 `/models/?type=llm`으로 실제
+  사용 가능 모델을 불러와 ⭐ 추천 → 일반 → 💸 고비용 → ⚠️ 레거시 순으로 보여준다. 추천은
+  `gemini-3.5-flash-lite`(기본), `gpt-6-luna`, `claude-haiku-5-5`, `gemini-3.8-flash`,
+  `solar-mini4`. 게이트웨이가 가격 정보를 주지 않아 등급은 모델 계열명(opus·fable·pro·sol·max
+  등)으로 판정한다. 고비용·레거시·목록에 없는 모델은 저장 전에 확인창을 띄우고, 이미지·영상·
+  임베딩·웹검색 전용 등 텍스트 요약에 쓸 수 없는 모델은 저장을 거부한다
+  (`frontend/js/settings.js`, `frontend/index.html`)
+- **로그인 세션 주기 점검**: 자동 모드가 꺼져 있고 대시보드에도 접속하지 않으면 LMS 세션이
+  만료돼도 다음 접속 때에야 알림이 왔다. 이제 백엔드가 설정한 주기(30분~6시간, 기본 30분)마다
+  LMS 대시보드에 접속해 세션을 확인한다. 살아 있으면 저장된 세션 쿠키를 갱신하고, 만료됐을 때
+  학번/비밀번호가 메모리에 있으면 재로그인하며, 쿠키로만 복원된 세션이면 강제 로그아웃 후
+  텔레그램으로 재로그인을 안내한다(`TELEGRAM_NOTIFY_ERROR` 설정을 따름). 설정 탭 재생 섹션에서
+  ON/OFF와 시간·분 드롭다운으로 주기를 고른다(`SESSION_CHECK_ENABLED`,
+  `SESSION_CHECK_INTERVAL_MINUTES`). 자동 모드가 브라우저를 쓰는 중이면 그 회차는 건너뛰고,
+  네트워크 오류는 로그아웃시키지 않는다 (`backend/api/session_guard.py`, `backend/main.py`)
+
+### Changed
+
+- **설정 저장 완료 메시지를 팝업으로 표시**: "설정이 저장되었습니다"가 페이지 맨 위에만 나와
+  스크롤을 올려야 보였다. 이제 스크롤 위치와 관계없이 화면 상단 가운데에 3초간 팝업으로 뜬다
+  (`frontend/index.html`, `frontend/js/settings.js`)
+
 ## [v26.11.6] - 2026-10-21
 
 ### Fixed
