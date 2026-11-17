@@ -94,6 +94,9 @@ class CourseScraper:
         self._page = None
         self._login_lock = asyncio.Lock()
         self._session_restored = False  # 병렬 재로그인 중복 방지 플래그
+        # close() 직전 세션 쿠키. 자동 모드의 close()→start() 브라우저 재시작이 쿠키를 이어받게 한다 —
+        # 쿠키로만 복원된 세션(학번/비밀번호 없음)은 이게 없으면 재시작마다 "세션 만료"로 멈췄다.
+        self._last_storage_state: dict | None = None
 
     async def _setup_browser(self, storage_state: dict | None = None):
         _args = [
@@ -180,6 +183,7 @@ class CourseScraper:
         예외를 던져 호출자가 "세션 만료 → 수동 로그인 필요"로 처리하게 한다.
         """
         self._pw = await async_playwright().start()
+        storage_state = storage_state or self._last_storage_state
         self._page, self._browser = await self._setup_browser(storage_state=storage_state)
         self._log("LMS 접속 중...")
         await self._page.goto(_DASHBOARD_URL, wait_until="domcontentloaded")
@@ -199,6 +203,9 @@ class CourseScraper:
         return await self._context.storage_state()
 
     async def close(self):
+        if self._context is not None:
+            with contextlib.suppress(Exception):
+                self._last_storage_state = await self._context.storage_state()
         if self._browser:
             await self._browser.close()
         if self._pw:
