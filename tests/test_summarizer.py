@@ -140,6 +140,61 @@ def test_summarize_gemini_empty_response_raises():
             _summarize_gemini("key", "model", "prompt")
 
 
+def _gemini_server_error():
+    from google.genai import errors
+
+    return errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+
+
+def test_summarize_gemini_retries_server_error_then_succeeds():
+    """503 같은 서버측 일시 오류는 대기 후 재시도해 요약을 살린다."""
+    from unittest.mock import MagicMock
+
+    from src.summarizer.summarizer import _summarize_gemini
+
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = [_gemini_server_error(), MagicMock(text="요약")]
+
+    with patch("google.genai.Client", return_value=fake_client), patch("time.sleep") as sleep:
+        assert _summarize_gemini("key", "model", "prompt") == "요약"
+    assert fake_client.models.generate_content.call_count == 2
+    sleep.assert_called_once_with(10)
+
+
+def test_summarize_gemini_gives_up_after_retries():
+    from unittest.mock import MagicMock
+
+    from google.genai import errors
+
+    from src.summarizer.summarizer import _GEMINI_RETRY_DELAYS, _summarize_gemini
+
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = _gemini_server_error()
+
+    with patch("google.genai.Client", return_value=fake_client), patch("time.sleep"):
+        with pytest.raises(errors.ServerError):
+            _summarize_gemini("key", "model", "prompt")
+    assert fake_client.models.generate_content.call_count == len(_GEMINI_RETRY_DELAYS) + 1
+
+
+def test_summarize_gemini_does_not_retry_client_error():
+    """4xx(키 오류·쿼터)는 재시도해도 같으므로 바로 실패한다."""
+    from unittest.mock import MagicMock
+
+    from google.genai import errors
+
+    from src.summarizer.summarizer import _summarize_gemini
+
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = errors.ClientError(400, {"error": {"message": "bad key"}})
+
+    with patch("google.genai.Client", return_value=fake_client), patch("time.sleep") as sleep:
+        with pytest.raises(errors.ClientError):
+            _summarize_gemini("key", "model", "prompt")
+    assert fake_client.models.generate_content.call_count == 1
+    sleep.assert_not_called()
+
+
 def test_openai_model_ids():
     """OpenAI 목록은 GPT-5.6 계열을 기본으로 사용한다."""
     from src.summarizer.summarizer import OPENAI_DEFAULT_MODEL, OPENAI_MODEL_IDS

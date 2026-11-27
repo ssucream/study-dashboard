@@ -5,6 +5,7 @@ STT로 생성된 .txt 파일을 Gemini / OpenAI / OpenRouter API로 요약한다
 결과는 동일 경로에 _summarized.txt로 저장된다.
 """
 
+import time
 from pathlib import Path
 
 import requests
@@ -12,6 +13,9 @@ import requests
 # 요약 1건에 허용하는 최대 대기 시간(초). 긴 전사본이라도 이 안에 끝나야 하며,
 # 초과 시 executor 스레드를 무한정 붙잡지 않도록 명시적으로 끊는다.
 _SUMMARY_REQUEST_TIMEOUT = 300
+
+# Gemini 5xx(503 high demand 등) 재시도 대기(초). OpenAI SDK는 자체적으로 5xx를 재시도한다.
+_GEMINI_RETRY_DELAYS = (10, 30)
 
 DEFAULT_SUMMARY_PROMPT = """\
 당신은 대학교 강의 내용을 정리하는 전문 학습 보조 AI입니다.
@@ -412,6 +416,7 @@ def build_summary_prompt(
 def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
     try:
         from google import genai
+        from google.genai import errors as genai_errors
         from google.genai import types
     except ImportError:
         raise RuntimeError("google-genai 패키지가 설치되어 있지 않습니다.\n설치: pip install google-genai") from None
@@ -423,7 +428,15 @@ def _summarize_gemini(api_key: str, model: str, prompt: str) -> str:
     config = types.GenerateContentConfig()
     if not model.startswith("gemini-3"):
         config.thinking_config = types.ThinkingConfig(thinking_budget=0)
-    response = client.models.generate_content(model=model, contents=prompt, config=config)
+    for delay in (*_GEMINI_RETRY_DELAYS, None):
+        try:
+            response = client.models.generate_content(model=model, contents=prompt, config=config)
+            break
+        except genai_errors.ServerError:
+            # 503 "high demand" 같은 서버측 일시 오류만 재시도 — 4xx(키·쿼터)는 재시도해도 같다
+            if delay is None:
+                raise
+            time.sleep(delay)
     if not response.text:
         finish_reason = None
         if response.candidates:
