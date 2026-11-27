@@ -5,10 +5,11 @@ import sys
 import traceback
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
 
 from playwright.async_api import Frame, Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from src import logger as logger_module
 from src.auth.login import _needs_login, ensure_logged_in
 from src.scraper.models import (
     Course,
@@ -342,13 +343,18 @@ class CourseScraper:
             async with sem:
                 page = await self._context.new_page()
                 try:
-                    results[idx] = await self._fetch_lectures_on(page, course)
+                    try:
+                        results[idx] = await self._fetch_lectures_on(page, course)
+                    except PlaywrightTimeoutError:
+                        # 같은 과목이 스케줄 시각 부하로 간헐적으로 타임아웃 — 1회만 재시도
+                        self._log(f"강의 로딩 타임아웃 — 1회 재시도: {course.long_name}")
+                        results[idx] = await self._fetch_lectures_on(page, course)
                 except Exception as e:
                     tb = traceback.format_exc()
                     msg = f"강의 로딩 실패 ({course.long_name}): {e}\n{tb}"
                     self._log(msg)
                     try:
-                        log_dir = Path(__file__).parent.parent.parent / "logs"
+                        log_dir = logger_module._LOGS_DIR
                         log_dir.mkdir(exist_ok=True)
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                         log_path = log_dir / f"{ts}_scraper_error.log"

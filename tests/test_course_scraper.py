@@ -56,3 +56,69 @@ class TestIsCurrentTerm:
 
     def test_other_year_non_regular_excluded(self):
         assert not _is_current_term("비정규과정(2025)", "2026년 2학기")
+
+
+class _FakePage:
+    async def close(self):
+        pass
+
+
+class _Course:
+    long_name = "과목"
+
+
+class _FakeContext:
+    async def new_page(self):
+        return _FakePage()
+
+
+def _make_scraper(fetch):
+    from src.scraper.course_scraper import CourseScraper
+
+    scraper = CourseScraper("u", "p")
+    scraper._context = _FakeContext()
+    scraper._fetch_lectures_on = fetch
+    return scraper
+
+
+async def test_fetch_all_details_retries_once_on_timeout(tmp_path):
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    calls = []
+
+    async def fetch(page, course):
+        calls.append(course)
+        if len(calls) == 1:
+            raise PlaywrightTimeoutError("Timeout 30000ms exceeded")
+        return "detail"
+
+    results = await _make_scraper(fetch).fetch_all_details([_Course()])
+    assert results == ["detail"]
+    assert len(calls) == 2
+    assert not (tmp_path / "logs").exists()  # 재시도 성공 시 에러 로그를 남기지 않는다
+
+
+async def test_fetch_all_details_gives_up_after_second_timeout(tmp_path):
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    calls = []
+
+    async def fetch(page, course):
+        calls.append(course)
+        raise PlaywrightTimeoutError("Timeout 30000ms exceeded")
+
+    results = await _make_scraper(fetch).fetch_all_details([_Course()])
+    assert results == [None]
+    assert len(calls) == 2
+    assert len(list((tmp_path / "logs").glob("*_scraper_error.log"))) == 1
+
+
+async def test_fetch_all_details_does_not_retry_other_errors():
+    calls = []
+
+    async def fetch(page, course):
+        calls.append(course)
+        raise RuntimeError("iframe을 찾을 수 없습니다.")
+
+    assert await _make_scraper(fetch).fetch_all_details([_Course()]) == [None]
+    assert len(calls) == 1
