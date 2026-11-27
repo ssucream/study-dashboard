@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from src import db
 
 
@@ -35,6 +37,7 @@ def test_ensure_schema_creates_playback_attempts(tmp_path, monkeypatch):
     assert {"course_id", "lecture_url", "attempt_count", "suppressed", "notified"} <= cols
 
 
+@pytest.mark.real_db_path
 def test_db_path_does_not_depend_on_cwd(monkeypatch):
     """/db가 없으면 CWD가 아니라 프로젝트 고정 경로를 기준으로 db/를 사용해야 한다."""
     monkeypatch.setattr(Path, "exists", lambda self: str(self) != "/db")
